@@ -1,0 +1,701 @@
+/**
+ * The design system, carried over from the Portal design: a deep-blue brand panel against a
+ * white form card, a red primary action, square corners, Open Sans.
+ *
+ * Tokens live on `:root`; every colour below references one, so a rebrand is this block.
+ */
+@import '@fontsource/open-sans/400.css';
+@import '@fontsource/open-sans/600.css';
+@import '@fontsource/open-sans/700.css';
+
+:root {
+  font-family: 'Open Sans', Arial, sans-serif;
+  color: #1a1a1a;
+  background: #e7eef7;
+  font-synthesis: none;
+  font-size: 14px;
+  --blue: #264b82;
+  --red: #db2b21;
+  --muted: #667181;
+  --line: #d4dbe6;
+  --surface: #e7eef7;
+  --green: #087e53;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+button,
+input {
+  font: inherit;
+}
+button,
+a,
+input {
+  -webkit-tap-highlight-color: transparent;
+}
+button,
+a {
+  touch-action: manipulation;
+}
+button {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+button:focus-visible,
+a:focus-visible,
+input:focus-visible {
+  outline: 3px solid #6599da;
+  outline-offset: 3px;
+}
+a {
+  color: var(--blue);
+  text-decoration: none;
+}
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+h1 {
+  font-size: 30px;
+  line-height: 1.35;
+}
+h2 {
+  font-size: 22px;
+  line-height: 1.4;
+}
+h3 {
+  font-size: 18px;
+}
+p {
+  line-height: 1.6;
+}
+svg {
+  flex-shrink: 0;
+}
+small {
+  font-size: 12px;
+}
+.muted {
+  color: var(--muted);
+}
+
+/* --- buttons ------------------------------------------------------------------------------- */
+.button {
+  min-height: 42px;
+  padding: 10px 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  border: 1px solid transparent;
+  font-weight: 600;
+  background: white;
+  color: var(--blue);
+  transition: background 0.15s;
+}
+.button:hover:not(:disabled) {
+  background: #f3f6fb;
+}
+.button.primary {
+  background: var(--red);
+  color: white;
+  min-height: 48px;
+  font-size: 16px;
+}
+.button.primary:hover:not(:disabled) {
+  background: #be2119;
+}
+.button.secondary {
+  border-color: var(--blue);
+}
+.text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: none;
+  color: var(--blue);
+  padding: 5px 0;
+  font-weight: 600;
+}
+.text-button:hover {
+  text-decoration: underline;
+}
+.error-text {
+  color: #b2221b;
+  font-size: 13px;
+  margin: 8px 0;
+  line-height: 1.5;
+}
+.spin {
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* --- the auth screens (modules/auth/presentation) ------------------------------------------ */
+.login-page {
+  min-height: 100dvh;
+  display: grid;
+  grid-template-columns: 41% 59%;
+}
+.login-brand {
+  background: var(--blue);
+  color: white;
+  padding: 44px 52px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  position: relative;
+  overflow: hidden;
+  gap: 50px;
+}
+.login-brand:after {
+  content: '';
+  position: absolute;
+  right: -100px;
+  bottom: -80px;
+  width: 360px;
+  height: 360px;
+  border-radius: 50%;
+  background: #ffffff0d;
+  pointer-events: none;
+}
+.brand-logo {
+  padding: 14px 18px;
+  background: white;
+  align-self: flex-start;
+}
+.brand-logo img {
+  height: 36px;
+  display: block;
+  max-width: 100%;
+}
+.login-brand h1 {
+  font-size: 40px;
+  line-height: 1.3;
+  margin-bottom: 18px;
+}
+.login-brand p {
+  font-size: 20px;
+  font-weight: 400;
+  color: #c9d1df;
+  max-width: 380px;
+  line-height: 1.6;
+}
+.login-brand small {
+  color: #c9d1df;
+}
+.login-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+}
+.login-form {
+  width: 460px;
+  max-width: 100%;
+  background: white;
+  box-shadow: 0 10px 30px #264b821a;
+  padding: 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+.login-form h2 {
+  font-size: 30px;
+  margin-top: 8px;
+}
+.eyebrow {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.eyebrow img {
+  width: 24px;
+  height: 24px;
+}
+.login-form label {
+  font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.login-form input {
+  width: 100%;
+  height: 48px;
+  border: 1px solid var(--line);
+  padding: 0 14px;
+  font-weight: 400;
+  background: white;
+}
+.login-form input[aria-invalid='true'] {
+  border-color: var(--red);
+}
+.password-field {
+  position: relative;
+}
+.password-field input {
+  padding-right: 48px;
+}
+.password-field button {
+  position: absolute;
+  right: 0;
+  top: 0;
+  height: 48px;
+  width: 48px;
+  display: grid;
+  place-items: center;
+  background: none;
+  border: 0;
+  color: var(--muted);
+}
+.form-switch {
+  font-size: 13px;
+  color: var(--muted);
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+/* --- the application shell (app/AppShell.vue) ---------------------------------------------- */
+.app {
+  min-height: 100dvh;
+}
+.app-header {
+  height: 64px;
+  background: white;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  padding: 0 28px;
+  gap: 16px;
+}
+.logo {
+  height: 30px;
+  display: block;
+}
+.header-divider {
+  height: 26px;
+  width: 1px;
+  background: var(--line);
+}
+.header-title {
+  color: var(--muted);
+}
+.user-menu {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+/* The account button: avatar + name, the whole thing clickable. */
+.account-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--line);
+  background: white;
+  color: #1a1a1a;
+  padding: 6px 14px 6px 6px;
+  font-weight: 600;
+  transition: background 0.15s;
+}
+.account-button:hover,
+.account-button.active {
+  background: var(--surface);
+}
+.avatar {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  background: var(--blue);
+  color: white;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+.page {
+  max-width: 1440px;
+  margin: auto;
+  padding: 28px 40px;
+}
+
+/* --- the account screen (modules/account/presentation) ------------------------------------- */
+.account-page {
+  max-width: 720px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.account-heading {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.account-heading .avatar {
+  width: 56px;
+  height: 56px;
+  font-size: 20px;
+}
+.card {
+  background: white;
+  border: 1px solid var(--line);
+  padding: 8px 24px;
+}
+.field-list {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 220px 1fr;
+}
+.field-list dt,
+.field-list dd {
+  margin: 0;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+}
+.field-list dt {
+  color: var(--muted);
+}
+.field-list dd {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+/* The last row carries no rule: the card border already closes the list. */
+.field-list dt:nth-last-of-type(1),
+.field-list dd:nth-last-of-type(1) {
+  border-bottom: 0;
+}
+.role-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 10px;
+  background: var(--surface);
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 600;
+}
+.page-loader {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  gap: 12px;
+  grid-auto-flow: column;
+}
+
+/* --- phones -------------------------------------------------------------------------------- */
+@media (max-width: 860px) {
+  .login-page {
+    grid-template-columns: 1fr;
+  }
+  /* The brand panel is decoration, and on a phone it would push the form below the fold. */
+  .login-brand {
+    display: none;
+  }
+  .login-content {
+    padding: 0;
+    align-items: flex-start;
+  }
+  .login-form {
+    width: 100%;
+    min-height: 100dvh;
+    padding: 28px 20px;
+    box-shadow: none;
+    justify-content: center;
+  }
+  .app-header {
+    padding: 0 16px;
+    gap: 10px;
+    height: 60px;
+  }
+  .header-title,
+  .header-divider,
+  /* The logout label; the icon alone carries it on a phone. Scoped to `.text-button` on
+     purpose: `.user-menu > button > span` would also match the account button, whose
+     `RouterLink` renders no wrapper element of its own. */
+  .user-menu .text-button span {
+    display: none;
+  }
+  /* The name drops on a phone, but the avatar stays: it is what makes the account button a
+     button rather than an empty gap. `:not(.avatar)` matters — `.account-button span` would
+     match the avatar too and leave nothing to tap. */
+  .account-button > span:not(.avatar) {
+    display: none;
+  }
+  .account-button {
+    border: 0;
+    padding: 0;
+  }
+  .page {
+    padding: 22px 16px;
+  }
+  .field-list {
+    grid-template-columns: 1fr;
+  }
+  .field-list dt {
+    padding-bottom: 0;
+    border-bottom: 0;
+  }
+  .field-list dd {
+    padding-top: 6px;
+  }
+}
+
+/* --- header tabs (app/AppShell.vue) --------------------------------------------------------- */
+.tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  height: 100%;
+}
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  color: var(--muted);
+  font-weight: 600;
+  /* Transparent rather than absent, so the active tab's underline does not shift the label. */
+  border-bottom: 3px solid transparent;
+  transition: color 0.15s;
+}
+.tab:hover {
+  color: var(--blue);
+}
+/* `router-link-active`, not `-exact-active`: a child route should keep its tab lit. */
+.tab.router-link-active {
+  color: var(--blue);
+  border-bottom-color: var(--red);
+}
+
+/* --- the search line (modules/catalog/presentation/SearchBar.vue) --------------------------- */
+.products-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.search-bar {
+  display: flex;
+  gap: 12px;
+  align-items: stretch;
+}
+.search-field {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  background: white;
+  border: 1px solid var(--line);
+}
+.search-field:focus-within {
+  border-color: var(--blue);
+}
+.search-icon {
+  position: absolute;
+  left: 15px;
+  color: var(--muted);
+  pointer-events: none;
+}
+.search-field input {
+  width: 100%;
+  height: 48px;
+  border: 0;
+  background: none;
+  padding: 0 44px 0 46px;
+  outline-offset: -3px;
+}
+/* The browser's own "clear" affordance is replaced by one that matches the design. */
+.search-field input::-webkit-search-cancel-button {
+  display: none;
+}
+.search-clear {
+  position: absolute;
+  right: 0;
+  height: 48px;
+  width: 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: none;
+  color: var(--muted);
+}
+.search-clear:hover {
+  color: #1a1a1a;
+}
+.search-submit {
+  min-width: 128px;
+  flex-shrink: 0;
+}
+
+/* --- the correction notice (CorrectionNotice.vue) ------------------------------------------- */
+/* Deliberately quiet: it reports what already happened, so it must not compete with the
+   results for attention the way an error would. */
+.correction-notice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  align-items: baseline;
+  padding: 12px 16px;
+  background: white;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--blue);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.correction-notice strong {
+  font-style: italic;
+}
+.correction-original {
+  color: var(--muted);
+}
+.link-button {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--blue);
+  font-weight: 600;
+  font-style: italic;
+  text-decoration: underline;
+}
+.correction-source {
+  color: var(--muted);
+  margin-left: 4px;
+}
+.result-count {
+  font-size: 13px;
+}
+
+/* --- results ------------------------------------------------------------------------------- */
+.product-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+}
+.product-card {
+  background: white;
+  border: 1px solid var(--line);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.product-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+.product-head h3 {
+  font-size: 15px;
+  line-height: 1.45;
+}
+.product-sku {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--muted);
+  padding: 3px 8px;
+  background: var(--surface);
+}
+.product-description {
+  font-size: 13px;
+  color: var(--muted);
+  /* Two lines keeps every card the same height, so the grid does not look ragged. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.product-foot {
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.product-category {
+  font-size: 12px;
+  color: var(--muted);
+}
+.product-price {
+  font-weight: 700;
+  font-size: 15px;
+}
+.stock {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--green);
+}
+.stock.out {
+  color: var(--muted);
+}
+.load-more {
+  align-self: center;
+  min-width: 200px;
+}
+.results-loader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  padding: 40px 0;
+  justify-content: center;
+}
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 56px 20px;
+  color: var(--muted);
+  text-align: center;
+  background: white;
+  border: 1px solid var(--line);
+}
+.empty-state h3 {
+  color: #1a1a1a;
+}
+
+@media (max-width: 860px) {
+  /* The tab labels drop with everything else in the header; the icons carry them. */
+  .tabs {
+    margin-left: -6px;
+  }
+  .tab {
+    padding: 0 10px;
+  }
+  .tab span {
+    display: none;
+  }
+  .search-bar {
+    flex-direction: column;
+  }
+  .search-submit {
+    width: 100%;
+  }
+  .product-grid {
+    grid-template-columns: 1fr;
+  }
+}
