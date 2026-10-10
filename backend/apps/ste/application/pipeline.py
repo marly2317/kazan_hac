@@ -746,8 +746,10 @@ class Pipeline:
     @staticmethod
     def _unify_extra(items: list[dict]) -> list[dict]:
         """Дополнительные характеристики — к словарным названиям и единицам ОКЕИ (§4.7)."""
+        from apps.ste.domain.extra_filter import filter_extra
         from apps.ste.runtime import extra_unifier
 
+        items = filter_extra(items)  # без «Описание: афигенный» — только свойства товара
         try:
             return extra_unifier().unify_all(items)
         except Exception as error:  # noqa: BLE001 — словарь необязателен
