@@ -133,34 +133,33 @@ def extract_by_rules(text: str, family: Family) -> dict[str, ExtractedValue]:
     return found
 
 
+#: Как поставщики называют габарит, которого в КТРУ нет под этим именем: «ширина» шкафа или
+#: стола в КТРУ — «Длина».
+HINT_SYNONYMS = {"ширин": "длин"}
+
+
 def _attribute(
     text: str, position: int, unit: U.Unit | None, numeric: list[FamilyChar], taken: set[str]
 ) -> FamilyChar | None:
-    """К какой характеристике относится число: слово-подсказка слева, иначе — размерность."""
-    left = text[max(0, position - 60) : position]
-    left_stems = set(_stems(left)[-4:])
+    """К какой характеристике относится число: ближайшее слово-подсказка слева, иначе — размерность.
+
+    Только ближайшее слово: в «высота 215 см ширина 130 см» подсказка к 130 — «ширина», а не
+    «высота», стоящая раньше. Из подходящих — характеристика самого изделия («Длина шкафа»),
+    а не его части («Длина выдвижного ящика»): часть пользователь назвал бы.
+    """
+    words = [w for w in _WORD.findall(text[max(0, position - 40) : position]) if len(w) >= 4]
+    hint = _stem(words[-1]) if words else ""
+    hint = HINT_SYNONYMS.get(hint[:5], hint)
     candidates = [char for char in numeric if char.key not in taken]
-    named = [
-        char
-        for char in candidates
-        if left_stems & {stem for stem in _stems(char.name) if len(stem) >= 4}
-    ]
     if unit is not None:
-        named = [
-            char for char in named if char.unit is None or char.unit.dimension == unit.dimension
-        ]
-    if len(named) >= 1:
-        return named[0]
+        candidates = [c for c in candidates if c.unit is None or c.unit.dimension == unit.dimension]
+    named = [c for c in candidates if hint and any(st.startswith(hint) for st in _stems(c.name))]
+    if named:
+        return min(named, key=lambda c: len(c.name.split()))
     if unit is None:
         return None
-    same = [
-        char
-        for char in candidates
-        if char.unit is not None and char.unit.dimension == unit.dimension
-    ]
-    if len(same) == 1:
-        return same[0]
-    return None
+    same = [c for c in candidates if c.unit is not None]
+    return same[0] if len(same) == 1 else None
 
 
 def _fold(text: str) -> str:

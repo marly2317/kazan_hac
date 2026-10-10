@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 import time
 from dataclasses import asdict, dataclass, field
 from typing import Any
@@ -139,6 +140,7 @@ class Pipeline:
 
         start = time.perf_counter()
         state.text, fixes = self._correct(text)
+        state.text = join_compound_lengths(state.text)
         state.fixes = [asdict(fix) for fix in fixes]
         state.timings["typos"] = _ms(start)
 
@@ -381,7 +383,9 @@ class Pipeline:
         if hits:
             top = hits[0]
             features = self._confidence(hits, state.text)
-            if features.get("strong"):
+            # Все слова названия лидера есть в запросе («шкаф для одежды деревянный») — тип
+            # товара назван прямо, переспрашивать незачем.
+            if features.get("strong") or (features.get("name_overlap") or 0) >= 1.0:
                 state.candidates = [
                     asdict(FamilyChoice(top.family_id, 0.8, "лучшее совпадение поиска"))
                 ]
@@ -672,6 +676,17 @@ def config_fast_path() -> bool:
     import os
 
     return os.environ.get("STE_FAST_PATH", "1").strip().lower() in {"1", "true", "yes", "on"}
+
+
+_COMPOUND = re.compile(
+    r"(\d+)\s*(?:м|метр[а-я]*)\.?\s*(?:и\s+)?(\d{1,2})\s*(?:см|сантиметр[а-я]*)\b",
+    re.IGNORECASE,
+)
+
+
+def join_compound_lengths(text: str) -> str:
+    """«2 м 15 см», «1 метр и 30 см» → «215 см»: одно значение, а не два разных числа."""
+    return _COMPOUND.sub(lambda m: f"{int(m.group(1)) * 100 + int(m.group(2))} см", text)
 
 
 def _llm_note(error: Exception) -> str:
