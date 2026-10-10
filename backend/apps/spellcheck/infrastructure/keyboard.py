@@ -12,7 +12,7 @@ rather than pulled in as a dependency because it is forty lines and never change
 from __future__ import annotations
 
 from apps.spellcheck.application.ports import VocabularySource
-from apps.spellcheck.domain.correction import tokenize
+from apps.spellcheck.domain.correction import is_correctable, tokenize
 
 # ЙЦУКЕН ↔ QWERTY, by physical key.
 #
@@ -67,16 +67,27 @@ class KeyboardLayoutRewriter:
 
     def _recognized(self, text: str) -> int:
         known = self._known_terms()
-        return sum(1 for token in tokenize(text) if token in known)
+        return sum(1 for token in _words(text) if token in known)
 
     def rewrite(self, query: str) -> str | None:
+        words = _words(query)
         current = self._recognized(query)
         # A query the catalogue already understands is not a layout accident, whatever it looks
         # like. Checking this first keeps the stage off correct queries entirely.
-        if current and current == len(tokenize(query)):
+        #
+        # Counted over `_words` rather than every token: prepositions and article numbers are
+        # never in the vocabulary, so counting them made the test "are all words recognised?"
+        # impossible to pass for «стул офисный на колесиках» and left the stage running on
+        # queries it had already judged correct.
+        if current and current == len(words):
             return None
 
         for flipped in (to_russian(query), to_latin(query)):
             if flipped != query and self._recognized(flipped) > current:
                 return flipped
         return None
+
+
+def _words(text: str) -> list[str]:
+    """Tokens that could meaningfully be in the vocabulary — the rest cannot be judged."""
+    return [token for token in tokenize(text) if is_correctable(token)]

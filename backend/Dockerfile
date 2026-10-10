@@ -30,6 +30,16 @@ RUN python -m pip install --upgrade pip \
       "symspellpy==6.10.0" \
       "httpx==0.28.1"
 
+# Dev tooling, off by default. The production image stays free of a test runner and a linter;
+# the development stack turns this on so `pytest` and `ruff` can be run inside the same
+# container that serves the app, against the same Python and the same installed versions.
+# Without it the checks in the README could not be run at all: the published image has no
+# pytest, and `docker compose exec backend pytest` fails with "executable file not found".
+ARG INSTALL_DEV=0
+RUN if [ "$INSTALL_DEV" = "1" ]; then \
+      python -m pip install "ruff==0.16.10" "pytest==9.1.1" "pytest-django==4.14.0"; \
+    fi
+
 COPY . .
 
 # Non-root: the process only needs to read the code and write staticfiles. The home directory

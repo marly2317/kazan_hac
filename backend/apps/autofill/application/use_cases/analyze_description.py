@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import re
 from collections import Counter, defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 
 from apps.autofill.application.extraction import (
@@ -12,6 +13,11 @@ from apps.autofill.application.extraction import (
     characteristic_accepts_text,
     find_numbers,
     find_texts,
+    in_characteristic_units,
+    label_affinity,
+    names_a_characteristic,
+    stem,
+    unit_is_compatible,
 )
 from apps.autofill.application.ports import KtruCatalog, QueryCorrector, UnitNormalizer
 from apps.autofill.domain.entities import (
@@ -23,7 +29,15 @@ from apps.autofill.domain.entities import (
     PositionCandidate,
 )
 from apps.autofill.domain.enums import IssueKind
+from apps.autofill.domain.matching import (
+    NAME_OVERLAP_FLOOR,
+    name_coverage,
+    name_overlap,
+)
 from apps.ktru.domain.entities import Characteristic
+
+#: Any run of letters — position names are split on this to find the product's own words.
+_WORD_RE = re.compile(r"[а-яёa-z]+", re.IGNORECASE)
 
 #: How many positions the name search puts on the table before characteristics narrow them.
 #: Wide enough that the right one is in there, small enough to hold their characteristics.
@@ -32,12 +46,13 @@ CANDIDATE_POOL = 300
 #: How many candidates the API returns while the answer is still ambiguous.
 SHOWN_CANDIDATES = 10
 
+#: Label of the step that drops positions the description does not name. Named here because
+#: the abstention branch keeps exactly this step and the initial search, and nothing else.
+NAMED_STEP = "Соответствие наименованию"
+
 #: How many "add this next" prompts to offer.
 MAX_NEXT_STEPS = 3
 
-#: What one confirmed characteristic is worth against the name-similarity score. Enough to
-#: order positions with near-identical names, not enough to overturn a much better name match.
-SUPPORT_BOOST = 0.35
 
 
 @dataclass(frozen=True)
@@ -73,20 +88,7 @@ class AnalyzeDescription:
         )
         text = correction.corrected
 
-        issues: list[Issue] = []
-        if correction.changed:
-            issues.append(
-                Issue(
-                    kind=IssueKind.TYPO,
-                    characteristic="",
-                    raw=correction.original,
-                    message=(
-                        f"В описании исправлены опечатки: «{correction.original}» → "
-                        f"«{correction.corrected}»."
-                    ),
-                    suggestions=[correction.corrected],
-                )
-            )
+        issues: list[Issue] = _correction_issues(correction)
 
         if not text.strip():
             return Analysis(
@@ -124,7 +126,14 @@ class AnalyzeDescription:
         by_code = self._catalog.characteristics_for([c.code for c in candidates])
         pool = [c for c in candidates if c.code in by_code] or candidates
 
-        extracted, numbers = self._extract(text, by_code)
+        # Слова, которыми называется сам товар. Они не могут служить подсказкой к тому, какой
+        # характеристике принадлежит число: в наименованиях характеристик молотка слово
+        # «молоток» встречается сплошь и рядом.
+        product_stems = frozenset(
+            stem(word) for candidate in pool for word in _name_words(candidate.name)
+        )
+
+        extracted, numbers, attributed = self._extract(text, by_code, product_stems)
 
         # Each recognised characteristic is a filter, applied in turn so the elimination is
         # visible rather than happening all at once.
@@ -153,17 +162,73 @@ class AnalyzeDescription:
                 )
             )
 
-        # Support is *added* to the name score rather than ranked ahead of it. Ordering by
-        # support first let a position that happens to declare «Сезонность» outrank one whose
-        # name is the description word for word — one matched characteristic is weaker evidence
-        # than a name that scores four times higher.
-        pool.sort(
-            key=lambda candidate: -(
-                candidate.score + SUPPORT_BOOST * supports[candidate.code]
+        # Support is *added* to the name score rather than ranked ahead of it — see
+        # `PositionCandidate.rank`. Ordering by support first let a position that happens to
+        # declare «Сезонность» outrank one whose name is the description word for word; one
+        # matched characteristic is weaker evidence than a name that scores four times higher.
+        #
+        # The two measures are attached to the candidate here, not recomputed later, so the
+        # order the user sees and the confidence the state is decided by are the same numbers.
+        pool = [
+            replace(
+                candidate,
+                support=supports[candidate.code],
+                name_overlap=name_overlap(text, candidate.name),
+                name_coverage=name_coverage(text, candidate.name),
             )
+            for candidate in pool
+        ]
+
+        # Positions the description does not name at all are dropped outright, not merely
+        # ranked below. Trigram similarity happily returns «Пиджак мужской» for «костюм
+        # рабочий мужской» — the two share «мужской» — and a candidate list containing things
+        # the user plainly did not ask for is worse than a shorter one, because the user has
+        # to rule them out by hand.
+        #
+        # Unless that empties the pool: then the near misses are all there is, and they are
+        # kept so the abstention can name them. See `_no_match`.
+        named = [c for c in pool if c.name_overlap >= NAME_OVERLAP_FLOOR]
+        if named and len(named) < len(pool):
+            steps.append(
+                NarrowingStep(
+                    label=NAMED_STEP,
+                    detail="отброшены позиции, которые описание не называет",
+                    before=len(pool),
+                    after=len(named),
+                )
+            )
+            pool = named
+
+        pool.sort(key=lambda candidate: (-candidate.rank, candidate.code))
+
+        issues.extend(
+            self._value_issues(numbers, extracted, attributed, by_code, pool, product_stems)
         )
 
-        issues.extend(self._value_issues(numbers, extracted, by_code, pool))
+        # Below the confidence floor nothing further is worth saying: the missing-required list
+        # and the "add this next" prompts would both be computed from a position the user never
+        # asked about, and dressing a bad match up with advice about it is what made the wrong
+        # answer look considered. The near misses are offered instead, as near misses.
+        if pool[0].name_overlap < NAME_OVERLAP_FLOOR:
+            issues.append(_no_match(text, pool))
+            # The extracted characteristics go too, and so do the steps that applied them.
+            # Every one of them was attributed by looking at the candidate positions — and
+            # those are the positions just judged not to be the product. Reporting
+            # «Высота изножья (от спального места): 150 мм» for a screwdriver is not partial
+            # progress, it is a confident statement about a bed the user never mentioned.
+            # What survives is the search itself: how many names were looked at, and that
+            # none of them was named by the description.
+            return Analysis(
+                original=correction.original,
+                corrected=text,
+                characteristics=[],
+                issues=[issue for issue in issues if issue.kind is not IssueKind.OUT_OF_RANGE],
+                steps=[step for step in steps if step.before == 0 or step.label == NAMED_STEP],
+                candidates=pool[:SHOWN_CANDIDATES],
+                next_steps=[],
+                total_candidates=len(pool),
+            )
+
         issues.extend(self._missing_required(by_code, pool, extracted))
 
         return Analysis(
@@ -172,7 +237,7 @@ class AnalyzeDescription:
             characteristics=extracted,
             issues=issues,
             steps=steps,
-            candidates=pool[:SHOWN_CANDIDATES],
+            candidates=_with_distinctions(pool[:SHOWN_CANDIDATES], by_code),
             next_steps=self._next_steps(by_code, pool, extracted),
             total_candidates=len(pool),
         )
@@ -180,8 +245,13 @@ class AnalyzeDescription:
     # --- extraction ---------------------------------------------------------------------
 
     def _extract(
-        self, text: str, by_code: dict[str, list[Characteristic]]
-    ) -> tuple[list[ExtractedCharacteristic], list[NumberMention]]:
+        self,
+        text: str,
+        by_code: dict[str, list[Characteristic]],
+        product_stems: frozenset[str],
+    ) -> tuple[
+        list[ExtractedCharacteristic], list[NumberMention], list[tuple[str, NumberMention]]
+    ]:
         every: list[Characteristic] = [c for group in by_code.values() for c in group]
 
         found: dict[str, ExtractedCharacteristic] = {}
@@ -199,26 +269,92 @@ class AnalyzeDescription:
         for characteristic in every:
             by_name[characteristic.name].append(characteristic)
 
+        attributed_numbers: list[tuple[str, NumberMention]] = []
         for mention in numbers:
-            if not mention.unit:
+            attributed = self._attribute(
+                mention, by_name, taken=set(found), product_stems=product_stems
+            )
+            if attributed is None:
                 continue
-            # Attribute the number to every characteristic measured in that unit which also
-            # permits the value. A number alone cannot say which characteristic it belongs to,
-            # so the unit plus the permitted range is what disambiguates it.
-            for name, group in by_name.items():
-                if name in found:
-                    continue
-                if any(characteristic_accepts(c, mention) for c in group):
-                    found[name] = ExtractedCharacteristic(
-                        name=name,
-                        raw=mention.raw,
-                        value=_plain(mention.number),
-                        unit=mention.unit,
-                        raw_unit=mention.raw_unit,
-                    )
-                    break
+            name, expressed = attributed
+            attributed_numbers.append((name, mention))
+            # `raw` keeps what the user wrote and `value`/`unit` carry the unified form, so the
+            # interface can show «500 г → 0.5 Килограмм» rather than silently substituting one
+            # for the other. `was_unified` is derived from exactly that difference.
+            found[name] = ExtractedCharacteristic(
+                name=name,
+                raw=mention.raw,
+                value=_plain(expressed.number),
+                unit=expressed.unit,
+                raw_unit=mention.raw_unit,
+            )
 
-        return list(found.values()), numbers
+        return list(found.values()), numbers, attributed_numbers
+
+    @staticmethod
+    def _attribute(
+        mention: NumberMention,
+        by_name: dict[str, list[Characteristic]],
+        taken: set[str],
+        product_stems: frozenset[str],
+    ) -> tuple[str, NumberMention] | None:
+        """Which characteristic a number belongs to, or ``None`` when nothing claims it.
+
+        Three pieces of evidence, in order of how much they actually tell us:
+
+        1. **the words beside the number** — «высота» next to «2000 мм» is the user naming the
+           characteristic. This ranks first because it is the only evidence that distinguishes
+           «Высота шкафа» from «Глубина шкафа», both of which are millimetres and both of which
+           accept 2000;
+        2. **the unit** — narrows to the characteristics measured that way;
+        3. **the permitted values** — the number has to be one КТРУ allows.
+
+        Candidates are considered in name order so the result does not depend on the order
+        positions came back from the database.
+        """
+        best: tuple[int, int] | None = None
+        chosen: tuple[str, NumberMention] | None = None
+
+        for name in sorted(by_name):
+            if name in taken:
+                continue
+            group = by_name[name]
+            accepting = [c for c in group if characteristic_accepts(c, mention)]
+            affinity = label_affinity(name, mention.context, product_stems)
+
+            if affinity:
+                # The user named this characteristic, so the number belongs to it **whether or
+                # not КТРУ permits the value**. Requiring acceptance here is what hid
+                # out-of-range values: «матрац длина 400 см» could not be filed under «Длина»
+                # (permitted 60–250 см), so it silently landed on «Высота», whose range is
+                # open — the one real error in the description disappeared, and «Длина» was
+                # then reported as *missing*. An unacceptable value on the right
+                # characteristic is exactly what the validation step needs to see.
+                #
+                # A qualitative characteristic is still skipped unless it accepts the number:
+                # a number is not one of its enumerated texts, and the text pass already
+                # claimed the ones that are.
+                if not accepting and not any(c.is_quantitative for c in group):
+                    continue
+            else:
+                # No label: the unit and the permitted values are the only evidence, and
+                # neither alone is enough. Without both, the only thing known is that the
+                # value happens to be allowed — true of hundreds of characteristics. Guessing
+                # here is how a bare «48» ends up filed under whichever was looked at first.
+                if not accepting or not mention.unit:
+                    continue
+
+            fits_unit = any(unit_is_compatible(c, mention) for c in group)
+            key = (affinity, 1 if (mention.unit and fits_unit) else 0)
+            if best is None or key > best:
+                # The mention as the *winning* characteristic measures it, so a conversion is
+                # reported in the unit КТРУ states. Preferring one that accepted the value
+                # keeps the conversion target sensible when the group disagrees.
+                base = accepting[0] if accepting else group[0]
+                expressed = in_characteristic_units(base, mention) or mention
+                best, chosen = key, (name, expressed)
+
+        return chosen
 
     # --- problems -----------------------------------------------------------------------
 
@@ -226,20 +362,39 @@ class AnalyzeDescription:
         self,
         numbers: list[NumberMention],
         extracted: list[ExtractedCharacteristic],
+        attributed: list[tuple[str, NumberMention]],
         by_code: dict[str, list[Characteristic]],
         pool: list[PositionCandidate],
+        product_stems: frozenset[str],
     ) -> list[Issue]:
-        """Numbers nothing in the surviving candidates can accept."""
-        issues: list[Issue] = []
-        taken = {item.raw for item in extracted}
+        """Everything wrong with the numbers in the description, with КТРУ's reasons."""
         live: list[Characteristic] = [
             c for candidate in pool for c in by_code.get(candidate.code, [])
         ]
+        issues: list[Issue] = []
+
+        # Values that *were* attributed are checked first, against the characteristic they
+        # were attributed to. Skipping them — on the grounds that attribution had already
+        # succeeded — was the second half of the hidden-error problem: attribution no longer
+        # requires the value to be permitted, so «матрац длина 400 см» now reaches «Длина»
+        # and this is where КТРУ gets to say 400 см is not one of 60…250.
+        for name, mention in attributed:
+            named = next((c for c in live if c.name == name), None)
+            if named is None:
+                continue
+            issue = _judge(named, mention)
+            if issue is not None:
+                issues.append(issue)
+
+        claimed = {mention.raw for _, mention in attributed} | {item.raw for item in extracted}
 
         for mention in numbers:
-            if mention.raw in taken:
+            if mention.raw in claimed:
                 continue
-            if mention.raw_unit and not mention.unit:
+
+            # A word ОКЕИ does not know is only an error if it was not a characteristic name
+            # standing where a unit happened to fit. `48 размер` is valid input.
+            if mention.unit_is_unknown and not names_a_characteristic(mention.raw_unit, live):
                 issues.append(
                     Issue(
                         kind=IssueKind.UNKNOWN_UNIT,
@@ -256,32 +411,19 @@ class AnalyzeDescription:
                 )
                 continue
 
-            if not mention.unit:
+            # The characteristic the user was *naming* — the words beside the number — decides
+            # what the complaint is about. Reporting against "the first characteristic that
+            # uses this unit" named the wrong one: «2000 мм высота» would be judged against
+            # whichever millimetre characteristic came back first, and the explanation quoted
+            # that one's ranges, so a correct value could be called out against a range it was
+            # never meant to satisfy.
+            named = _named_characteristic(live, mention, product_stems)
+            if named is None:
                 continue
 
-            # The unit is real and used by a characteristic, but no permitted value covers the
-            # number: that is an out-of-range value, and КТРУ can say what the range is.
-            matching = [c for c in live if any(u.name == mention.unit for u in c.units)]
-            if matching and not any(characteristic_accepts(c, mention) for c in matching):
-                allowed = sorted(
-                    {
-                        value.describe()
-                        for c in matching[:4]
-                        for value in c.values
-                    }
-                )[:6]
-                issues.append(
-                    Issue(
-                        kind=IssueKind.OUT_OF_RANGE,
-                        characteristic=matching[0].name,
-                        raw=mention.raw,
-                        message=(
-                            f"Значение «{mention.raw}» не входит ни в один допустимый "
-                            f"диапазон характеристики «{matching[0].name}»."
-                        ),
-                        suggestions=allowed,
-                    )
-                )
+            issue = _judge(named, mention)
+            if issue is not None:
+                issues.append(issue)
         return issues
 
     @staticmethod
@@ -328,28 +470,264 @@ class AnalyzeDescription:
 
         supplied = {item.name for item in extracted}
         groups: dict[str, Counter[str]] = defaultdict(Counter)
+        quantitative: dict[str, bool] = {}
+        units: dict[str, str] = {}
 
         for candidate in pool:
             for characteristic in by_code.get(candidate.code, []):
                 if characteristic.name in supplied:
                     continue
+                quantitative[characteristic.name] = characteristic.is_quantitative
+                for unit in characteristic.units:
+                    units.setdefault(characteristic.name, unit.name)
                 for value in characteristic.values:
                     label = value.describe()
                     if label:
                         groups[characteristic.name][label] += 1
 
+        # Qualitative characteristics first, however many values the quantitative ones have.
+        # Ranking by value count alone put «Масса молотка» — eleven numeric ranges — above
+        # «Материал бойка» — three words the user can simply click. The question that can be
+        # answered in one tap is the better question to ask, even if it splits the pool less.
         ranked = sorted(
-            groups.items(), key=lambda pair: len(pair[1]), reverse=True
+            groups.items(),
+            key=lambda pair: (quantitative.get(pair[0], False), -len(pair[1]), pair[0]),
         )
         return [
             NextStep(
                 characteristic=name,
                 options=[label for label, _ in counts.most_common(6)],
                 splits_into=len(counts),
+                is_quantitative=quantitative.get(name, False),
+                unit=units.get(name, ""),
             )
             for name, counts in ranked[:MAX_NEXT_STEPS]
             if len(counts) > 1
         ]
+
+
+#: How many distinguishing characteristics to show against a candidate. Three fits a card and
+#: is enough to tell near-identical positions apart; more turns the choice back into a wall of
+#: text.
+MAX_DISTINCTIONS = 3
+
+
+def _with_distinctions(
+    shown: list[PositionCandidate], by_code: dict[str, list[Characteristic]]
+) -> list[PositionCandidate]:
+    """Annotate each shown candidate with what makes it different from the others.
+
+    A characteristic is *discriminating* when the candidates do not all permit the same values
+    for it. Characteristics they agree on are dropped however important they look: telling the
+    user that all three positions are «Пальто/Куртка» does not help them pick one. The ones
+    that disagree are ranked by how many distinct answers they produce, so the sharpest
+    distinction is shown first.
+    """
+    if len(shown) < 2:
+        return shown
+
+    # code -> characteristic name -> the set of values that position permits
+    permitted: dict[str, dict[str, frozenset[str]]] = {
+        candidate.code: {
+            characteristic.name: frozenset(
+                value.describe() for value in characteristic.values if value.describe()
+            )
+            for characteristic in by_code.get(candidate.code, [])
+        }
+        for candidate in shown
+    }
+
+    discriminating: list[tuple[int, str]] = []
+    for name in {name for values in permitted.values() for name in values}:
+        answers = {values.get(name, frozenset()) for values in permitted.values()}
+        if len(answers) > 1:
+            discriminating.append((len(answers), name))
+    # Most distinct answers first; name as the tiebreak so the order is stable across requests.
+    discriminating.sort(key=lambda pair: (-pair[0], pair[1]))
+
+    return [
+        replace(
+            candidate,
+            distinctions=[
+                f"{name}: {_short(permitted[candidate.code].get(name, frozenset()))}"
+                for _, name in discriminating[:MAX_DISTINCTIONS]
+            ],
+        )
+        for candidate in shown
+    ]
+
+
+def _short(values: frozenset[str]) -> str:
+    """A characteristic's permitted values in one line, or «не указана» when it has none.
+
+    The absence of a characteristic is itself a distinction, and the most informative one: it
+    is why one «Куртка зимняя из кожи» is not the other.
+    """
+    if not values:
+        return "не указана"
+    ordered = sorted(values)
+    head = ", ".join(ordered[:3])
+    return head if len(ordered) <= 3 else f"{head} и ещё {len(ordered) - 3}"
+
+
+def _correction_issues(correction) -> list[Issue]:
+    """What the spelling pipeline did, reported word by word.
+
+    One issue per word rather than one per query: «В описании исправлены опечатки: "<вся
+    строка>" → "<вся строка>"» leaves the user to diff two sentences themselves, and the
+    interface cannot attach it to anything. Per word, each report names the word, says whether
+    it was a mistake or a form of the reference's own wording, and carries the replacement as a
+    suggestion the user can accept or reject on its own.
+
+    The whole-query message survives as a fallback for a rewrite that changed the number of
+    words, where no honest word-to-word pairing exists.
+    """
+    if not correction.changed:
+        return []
+
+    edits = correction.edits
+    if not edits:
+        return [
+            Issue(
+                kind=IssueKind.TYPO,
+                characteristic="",
+                raw=correction.original,
+                message=(
+                    f"Описание исправлено: «{correction.original}» → «{correction.corrected}»."
+                ),
+                suggestions=[correction.corrected],
+            )
+        ]
+
+    return [
+        Issue(
+            kind=IssueKind.NORMALIZED if edit.is_inflection else IssueKind.TYPO,
+            characteristic="",
+            raw=edit.before,
+            message=(
+                f"«{edit.before}» приведено к форме справочника КТРУ — «{edit.after}»."
+                if edit.is_inflection
+                else (
+                    f"Слова «{edit.before}» нет в справочнике КТРУ; ближайшее по написанию — "
+                    f"«{edit.after}», оно и подставлено в описание."
+                )
+            ),
+            suggestions=[edit.after],
+        )
+        for edit in edits
+    ]
+
+
+def _no_match(text: str, pool: list[PositionCandidate]) -> Issue:
+    """The honest answer when КТРУ has nothing close enough.
+
+    КТРУ genuinely does not cover everything a user will type: there is no position for
+    «отвертка» anywhere in the reference outside the medical group. Trigram similarity has no
+    way to return nothing, so it returns the least-bad row — and without this check that row
+    was presented as the answer. Naming the nearest positions turns a dead end into a choice,
+    and says plainly that none of them was matched *to* the description.
+    """
+    # Deduplicated by name, in rank order. КТРУ gives several positions the same name, so the
+    # raw list offered «Кровать детская» three times — three chips that look like three
+    # choices and are not. The codes behind them are still listed below as candidates.
+    nearest: list[str] = []
+    for candidate in pool:
+        if candidate.name not in nearest:
+            nearest.append(candidate.name)
+        if len(nearest) == 5:
+            break
+    return Issue(
+        kind=IssueKind.NO_MATCH,
+        characteristic="",
+        raw=text,
+        message=(
+            "В справочнике КТРУ не нашлось позиции, уверенно соответствующей описанию "
+            f"«{text}». Уточните наименование товара или выберите из близких позиций."
+        ),
+        suggestions=nearest,
+    )
+
+
+def _judge(named: Characteristic, mention: NumberMention) -> Issue | None:
+    """What КТРУ has to say against one number, once we know whose number it is.
+
+    Two different complaints, kept apart because they lead to different fixes: a wrong unit is
+    «эта характеристика измеряется в миллиметрах», an out-of-range value is «допустимо от 400
+    до 2400». One boolean for both made it impossible to say which had happened.
+    """
+    if not unit_is_compatible(named, mention):
+        return Issue(
+            kind=IssueKind.WRONG_UNIT,
+            characteristic=named.name,
+            raw=mention.raw,
+            message=(
+                f"Характеристика «{named.name}» измеряется в "
+                + _units_phrase(named)
+                + f", а значение указано в «{mention.raw_unit}»."
+            ),
+            suggestions=[unit.name for unit in named.units][:6],
+        )
+
+    if not characteristic_accepts(named, mention):
+        allowed = _allowed(named)
+        return Issue(
+            kind=IssueKind.OUT_OF_RANGE,
+            characteristic=named.name,
+            raw=mention.raw,
+            message=(
+                f"Значение «{mention.raw}» не входит ни в один допустимый диапазон "
+                f"характеристики «{named.name}». КТРУ допускает: {', '.join(allowed)}."
+            ),
+            suggestions=allowed,
+        )
+    return None
+
+
+def _named_characteristic(
+    live: list[Characteristic], mention: NumberMention, product_stems: frozenset[str]
+) -> Characteristic | None:
+    """The characteristic the words around a number point at, if any.
+
+    Only a *named* characteristic is judged. A number with no label beside it could belong to
+    any of a dozen characteristics sharing its unit, and complaining that it fits none of them
+    would be complaining about a guess.
+    """
+    best = 0
+    chosen: Characteristic | None = None
+    for characteristic in sorted(live, key=lambda c: c.name):
+        affinity = label_affinity(characteristic.name, mention.context, product_stems)
+        if affinity > best:
+            best, chosen = affinity, characteristic
+    if chosen is not None:
+        return chosen
+
+    # No label — but if only one characteristic is measured in this unit, there is nothing to
+    # be ambiguous about and the number can still be judged. This is the common case for a
+    # simple product: «молоток 9000 мм» against a position whose only millimetre characteristic
+    # is «Длина рукоятки» is an out-of-range value, and staying silent about it would forfeit
+    # the error detection the task is scored on. A wardrobe, with height, width and depth all
+    # in millimetres, falls through to `None` instead of being judged against a guess.
+    matching = {
+        characteristic.name: characteristic
+        for characteristic in live
+        if mention.unit and unit_is_compatible(characteristic, mention)
+        and any(unit.name == mention.unit for unit in characteristic.units)
+    }
+    return next(iter(matching.values())) if len(matching) == 1 else None
+
+
+def _allowed(characteristic: Characteristic) -> list[str]:
+    """The permitted values of one characteristic, as КТРУ states them.
+
+    Quoted verbatim in the explanation: «не входит в диапазон» on its own is an accusation,
+    «КТРУ допускает ≥ 400 … ≤ 2400 Миллиметр» is something the user can act on.
+    """
+    return sorted({value.describe() for value in characteristic.values if value.describe()})[:6]
+
+
+def _units_phrase(characteristic: Characteristic) -> str:
+    names = [unit.name for unit in characteristic.units]
+    return ", ".join(f"«{name}»" for name in names[:3]) or "безразмерных величинах"
 
 
 #: A position either backs up an extracted value, rules it out, or says nothing about it.
@@ -382,6 +760,11 @@ def _verdict(characteristics: list[Characteristic], item: ExtractedCharacteristi
             SUPPORTS if characteristic_accepts_text(characteristic, item.value) else CONTRADICTS
         )
     return SILENT
+
+
+def _name_words(name: str) -> list[str]:
+    """Words of a position name, for the "this is the product, not an attribute" set."""
+    return _WORD_RE.findall(name)
 
 
 def _plain(number) -> str:

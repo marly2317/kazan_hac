@@ -1,7 +1,10 @@
 import { fileURLToPath, URL } from 'node:url';
 
 import vue from '@vitejs/plugin-vue';
-import { defineConfig } from 'vite';
+// `defineConfig` взят из `vitest/config`, а не из `vite`: это та же функция, но её тип знает
+// про поле `test`. С импортом из `vite` сборка падает на проверке типов, а тройной слэш-
+// директивой это не лечится — она действует только в начале файла, до импортов.
+import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   plugins: [vue()],
@@ -9,6 +12,13 @@ export default defineConfig({
     // `@/` is the only path alias: a deep relative import across module layers is what makes a
     // boundary violation easy to miss in review.
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
+  },
+  // The tests use the same aliases and the same plugin set as the build, so a component that
+  // compiles in the bundle compiles in a test.
+  test: {
+    environment: 'jsdom',
+    include: ['tests/**/*.test.ts'],
+    globals: true,
   },
   server: {
     port: 5173,

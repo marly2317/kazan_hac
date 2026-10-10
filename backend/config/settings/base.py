@@ -60,6 +60,7 @@ MIGRATION_MODULES = {
     "users": "apps.users.infrastructure.migrations",
     "catalog": "apps.catalog.infrastructure.migrations",
     "ktru": "apps.ktru.infrastructure.migrations",
+    "autofill": "apps.autofill.infrastructure.migrations",
 }
 
 MIDDLEWARE = [
@@ -205,6 +206,16 @@ LLM_TIMEOUT = env.float("LLM_TIMEOUT", default=4.0)
 # Hybrid reasoning models spend the token budget thinking and return no content at all. Off by
 # default; set to 0 only for a server that rejects the unknown `reasoning` field.
 LLM_DISABLE_REASONING = env.bool("LLM_DISABLE_REASONING", default=True)
+
+# --- сбор пробелов справочника --------------------------------------------------------------
+#
+# Необязательная возможность: сервис запоминает, какие слова из описаний он не смог объяснить
+# определённой позицией КТРУ, и показывает накопленное в админке. Это заметка тем, кто ведёт
+# справочник, — пользователю о ней не сообщается ничего.
+#
+# Выключается одной переменной: сбор ничего не добавляет в ответ и ничего не меняет в разборе,
+# поэтому его отключение не влияет ни на один пользовательский сценарий.
+COLLECT_REFERENCE_GAPS = env.bool("COLLECT_REFERENCE_GAPS", default=True)
 
 # Correction results and the catalogue vocabulary are cached here. The default is per-process,
 # so each gunicorn worker keeps its own copy — correct, just less effective. Point

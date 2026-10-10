@@ -19,6 +19,14 @@ class AnalyzeRequestSerializer(serializers.Serializer):
         allow_blank=True, max_length=MAX_DESCRIPTION, trim_whitespace=True
     )
     correct = serializers.BooleanField(required=False, default=True)
+    #: Описание дописано, а не набирается прямо сейчас.
+    #:
+    #: Разбор идёт по мере ввода, поэтому «куртк», «куртка», «куртка зим» — тоже запросы. Для
+    #: пользователя разницы нет, а для сбора наблюдений о нехватке в справочнике она
+    #: решающая: без этого флага в отчёт попали бы все обрывки слов, которые человек набрал
+    #: по дороге, и найти в нём настоящие пробелы стало бы невозможно. Интерфейс ставит `1`
+    #: только тогда, когда ввод закончен: нажата кнопка, Enter или подсказка.
+    settled = serializers.BooleanField(required=False, default=False)
 
 
 class CharacteristicSerializer(serializers.Serializer):
@@ -51,12 +59,19 @@ class CandidateSerializer(serializers.Serializer):
     name = serializers.CharField()
     okpd2_code = serializers.CharField()
     score = serializers.FloatField()
+    #: How many extracted characteristics this position explicitly confirms.
+    support = serializers.IntegerField()
+    #: ``«Характеристика: значение»`` lines separating this position from the other candidates.
+    distinctions = serializers.ListField(child=serializers.CharField())
 
 
 class NextStepSerializer(serializers.Serializer):
     characteristic = serializers.CharField()
     options = serializers.ListField(child=serializers.CharField())
     splits_into = serializers.IntegerField()
+    #: A number with a unit is expected, not one of `options` verbatim.
+    is_quantitative = serializers.BooleanField()
+    unit = serializers.CharField()
 
 
 class AnalysisSerializer(serializers.Serializer):
@@ -64,8 +79,12 @@ class AnalysisSerializer(serializers.Serializer):
 
     original = serializers.CharField()
     corrected = serializers.CharField()
+    #: True when `corrected` differs from `original` by more than letter case.
+    text_changed = serializers.BooleanField()
     state = serializers.CharField()
     resolved_code = serializers.CharField(allow_null=True)
+    #: How strongly the leading candidate is named by the description, in ``[0, 1]``.
+    confidence = serializers.FloatField()
     total_candidates = serializers.IntegerField()
     characteristics = CharacteristicSerializer(many=True)
     issues = IssueSerializer(many=True)
@@ -79,8 +98,10 @@ class AnalysisSerializer(serializers.Serializer):
         return {
             "original": analysis.original,
             "corrected": analysis.corrected,
+            "text_changed": analysis.text_changed,
             "state": analysis.state.value,
             "resolved_code": resolved.code if resolved else None,
+            "confidence": round(analysis.confidence, 4),
             "total_candidates": analysis.total_candidates,
             "characteristics": [
                 {
@@ -118,7 +139,9 @@ class AnalysisSerializer(serializers.Serializer):
                     "code": c.code,
                     "name": c.name,
                     "okpd2_code": c.okpd2_code,
-                    "score": round(c.score, 4),
+                    "score": round(c.rank, 4),
+                    "support": c.support,
+                    "distinctions": c.distinctions,
                 }
                 for c in analysis.candidates
             ],
@@ -127,6 +150,8 @@ class AnalysisSerializer(serializers.Serializer):
                     "characteristic": step.characteristic,
                     "options": step.options,
                     "splits_into": step.splits_into,
+                    "is_quantitative": step.is_quantitative,
+                    "unit": step.unit,
                 }
                 for step in analysis.next_steps
             ],

@@ -1,0 +1,26 @@
+# Development overlay. Use it *in addition to* the base file:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+#
+# Two differences from the deployable stack, and nothing else:
+#
+# 1. the backend image is built with `INSTALL_DEV=1`, so `pytest` and `ruff` exist inside the
+#    container and the checks in the README can actually be run;
+# 2. the source tree is bind-mounted over `/app`, so an edit is visible without a rebuild.
+#    The production image deliberately copies the code in instead — a container whose
+#    behaviour depends on the host filesystem is not a deployable artefact.
+#
+# The mount shadows `/app`, including the virtualenv-free site-packages — those live outside
+# `/app`, so they survive it. `staticfiles` is given its own volume for the same reason: it is
+# generated at boot and must not be written back into the working tree.
+services:
+  backend:
+    build:
+      args:
+        INSTALL_DEV: '1'
+    volumes:
+      - ../backend:/app
+      - backend-staticfiles:/app/staticfiles
+
+volumes:
+  backend-staticfiles:

@@ -678,6 +678,537 @@ small {
   color: #1a1a1a;
 }
 
+/* Демо-вход: отделён от основной формы линией, чтобы не читался как часть обычного входа —
+ * это служебная кнопка стенда, а не второй способ авторизации. */
+.demo-hint {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--line);
+  text-align: center;
+}
+
+/* --- автозаполнение СТЕ --------------------------------------------------------------------
+ *
+ * Цвета и разметка — те же токены Портала поставщиков, что и у авторизации: синий как цвет
+ * структуры, красный как единственное основное действие, прямые углы, Open Sans. Ни одного
+ * нового цвета ради одной панели: критерий оценивает интерфейс «с сохранением цветовой схемы
+ * и разметки страницы Портала поставщиков», и собственная палитра у вкладки — это ровно то,
+ * что такой критерий наказывает.
+ */
+.autofill-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* --- поле описания --- */
+.description-field {
+  background: white;
+  border: 1px solid var(--line);
+  padding: 18px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.field-label {
+  font-weight: 700;
+  font-size: 16px;
+}
+.field-hint {
+  font-size: 13px;
+  max-width: 70ch;
+}
+.field-row {
+  display: flex;
+  gap: 12px;
+  align-items: stretch;
+  margin-top: 8px;
+}
+.description-input {
+  flex: 1;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  font-family: inherit;
+  font-size: 15px;
+  line-height: 1.5;
+  resize: vertical;
+  min-height: 76px;
+}
+.description-input:focus {
+  border-color: var(--blue);
+}
+.analyse {
+  align-self: stretch;
+  white-space: nowrap;
+  min-width: 164px;
+}
+.examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 10px;
+  font-size: 13px;
+}
+
+/* --- подсказки по мере набора --- */
+.description-box {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+.description-box .description-input {
+  width: 100%;
+}
+.suggestions {
+  /* Над результатами, а не раздвигая их: список появляется и исчезает на каждом слове, и
+   * прыгающая вёрстка под курсором мешает набирать. */
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+  background: white;
+  border: 1px solid var(--blue);
+  max-height: 290px;
+  overflow-y: auto;
+  box-shadow: 0 6px 18px rgb(38 75 130 / 14%);
+}
+.suggestion {
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 13px;
+  background: white;
+  border: 0;
+  text-align: left;
+  font-size: 13px;
+}
+.suggestion:hover,
+.suggestion.active {
+  background: var(--surface);
+}
+.suggestion.active {
+  box-shadow: inset 3px 0 0 var(--blue);
+}
+.suggestion-word {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.suggestion-source {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.suggestion-kind {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+/* --- общая оболочка панели --- */
+.panel {
+  background: white;
+  border: 1px solid var(--line);
+  padding: 16px 18px 18px;
+}
+.panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  /* Переносится целиком, а не ломает заголовок по словам: «Что уточнить» в две строки рядом с
+   * длинной подсказкой читается как опечатка вёрстки. */
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding-bottom: 12px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+.panel-head h3 {
+  font-size: 16px;
+  white-space: nowrap;
+}
+.panel-head span {
+  font-size: 13px;
+}
+
+/* Две колонки, пока помещаются: таблица характеристик и воронка сужения — две половины одного
+ * объяснения, и читать их проще рядом, чем одну под другой. */
+.autofill-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.autofill-column {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+/* --- итог --- */
+.verdict {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  background: white;
+  border: 1px solid var(--line);
+  /* Левая кромка несёт состояние: цвет сообщает результат раньше, чем прочитан текст. */
+  border-left: 5px solid var(--muted);
+  padding: 16px 20px;
+}
+.verdict.resolved {
+  border-left-color: var(--green);
+}
+.verdict.ambiguous {
+  border-left-color: #c77700;
+}
+.verdict.not_found {
+  border-left-color: var(--red);
+}
+.verdict-state {
+  font-weight: 700;
+  font-size: 15px;
+}
+.verdict-code {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 23px;
+  font-weight: 700;
+  color: var(--blue);
+  margin: 2px 0 4px;
+  word-break: break-all;
+}
+.verdict-summary {
+  font-size: 13px;
+}
+.verdict-confidence {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  font-size: 13px;
+}
+.verdict-confidence strong {
+  font-size: 21px;
+}
+
+.original-notice {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  background: #fff8e8;
+  border: 1px solid #e8d6a8;
+  padding: 10px 14px;
+  font-size: 13px;
+}
+
+/* --- таблица характеристик --- */
+.characteristics {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.characteristics th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 0 10px 8px 0;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.characteristics td {
+  padding: 9px 10px 9px 0;
+  border-top: 1px solid var(--line);
+  vertical-align: top;
+}
+.characteristics .name {
+  font-weight: 600;
+  width: 42%;
+}
+.characteristics .raw {
+  color: var(--muted);
+}
+.unified-pair {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--green);
+}
+.unified-pair .unit {
+  color: #1a1a1a;
+  font-weight: 400;
+}
+.as-is {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* --- воронка --- */
+.funnel {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.funnel-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+.funnel-label {
+  font-weight: 600;
+}
+.funnel-detail {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.funnel-count {
+  margin-left: auto;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.funnel-count strong {
+  color: var(--blue);
+}
+.funnel-bar {
+  height: 8px;
+  background: var(--surface);
+  margin-top: 6px;
+}
+.funnel-fill {
+  display: block;
+  height: 100%;
+  background: var(--blue);
+  transition: width 0.25s;
+}
+.funnel-note {
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+/* --- замечания --- */
+.issue-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.issue {
+  display: flex;
+  gap: 10px;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-left-width: 4px;
+  font-size: 13px;
+}
+.issue.error {
+  border-left-color: var(--red);
+  background: #fdf3f2;
+}
+.issue.warning {
+  border-left-color: #c77700;
+  background: #fff8e8;
+}
+.issue.info {
+  border-left-color: var(--blue);
+  background: #f3f6fb;
+}
+.issue-icon {
+  margin-top: 2px;
+}
+.issue.error .issue-icon {
+  color: var(--red);
+}
+.issue.warning .issue-icon {
+  color: #c77700;
+}
+.issue.info .issue-icon {
+  color: var(--blue);
+}
+.issue-body {
+  min-width: 0;
+}
+.issue-title {
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+.issue-raw {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  background: white;
+  border: 1px solid var(--line);
+  padding: 1px 6px;
+  font-weight: 400;
+}
+.issue-message {
+  margin-top: 3px;
+  line-height: 1.55;
+}
+.issue-actions,
+.next-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 9px;
+}
+
+/* --- подсказка «что уточнить» --- */
+.next-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.next-name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 600;
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+.next-name .muted {
+  font-weight: 400;
+  font-size: 12px;
+}
+
+.next-ranges {
+  margin-top: 7px;
+  font-size: 12px;
+}
+.range-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.range-list li {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  padding: 4px 9px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* --- позиции КТРУ --- */
+.candidates {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.candidate {
+  border: 1px solid var(--line);
+  padding: 13px 15px;
+}
+.candidate.leader {
+  border-color: var(--green);
+  background: #f2faf6;
+}
+.candidate-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.candidate-check {
+  color: var(--green);
+  margin-top: 2px;
+}
+.candidate-title {
+  flex: 1;
+  min-width: 0;
+}
+.candidate-name {
+  font-weight: 600;
+}
+.candidate-code {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  font-size: 12px;
+  margin-top: 2px;
+}
+.candidate-code code {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  color: var(--blue);
+  font-size: 13px;
+}
+.copy {
+  white-space: nowrap;
+}
+.distinctions {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.candidate-support {
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+/* --- чип: подсказка, по которой можно нажать --- */
+.chip {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  padding: 5px 11px;
+  font-size: 13px;
+  color: #1a1a1a;
+  text-align: left;
+}
+.chip.actionable:hover:not(:disabled),
+.examples .chip:hover {
+  border-color: var(--blue);
+  background: white;
+  color: var(--blue);
+}
+.chip:disabled {
+  /* Не всякая подсказка подставляется — у «не хватает характеристик» это названия, а не
+   * значения. Выключенный вид честнее, чем кнопка, по которой ничего не происходит. */
+  opacity: 1;
+  color: var(--muted);
+  cursor: default;
+}
+
 @media (max-width: 860px) {
   /* The tab labels drop with everything else in the header; the icons carry them. */
   .tabs {
@@ -697,5 +1228,16 @@ small {
   }
   .product-grid {
     grid-template-columns: 1fr;
+  }
+  /* Ниже этой ширины две колонки объяснения становятся двумя узкими колонками, в которых
+   * таблица характеристик переносится по каждому слову. Одна колонка читается лучше. */
+  .autofill-grid {
+    grid-template-columns: 1fr;
+  }
+  .field-row {
+    flex-direction: column;
+  }
+  .analyse {
+    width: 100%;
   }
 }

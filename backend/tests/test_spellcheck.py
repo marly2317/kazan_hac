@@ -7,6 +7,7 @@ import pytest
 from apps.spellcheck.application.use_cases.correct_query import CorrectQuery
 from apps.spellcheck.domain.correction import (
     Correction,
+    is_correctable,
     normalize_query,
     tokenize,
 )
@@ -239,3 +240,85 @@ def test_plausible_accepts_a_real_correction(answer: str) -> None:
 )
 def test_plausible_rejects_a_model_that_answered_instead_of_correcting(answer: str) -> None:
     assert not _plausible("наутбук", answer)
+
+
+# --- what a corrector may not touch ---------------------------------------------------------
+#
+# Every case below was a real failure on the live stack. The corrector was built to rewrite a
+# token towards the nearest word in the КТРУ vocabulary, and SymSpell always has a nearest
+# word, so any token the reference does not happen to contain was rewritten into one it does.
+# The reference covers 72 tool names; the Russian language does not stop there.
+
+
+def test_a_function_word_is_never_corrected() -> None:
+    # «стул офисный **на** колесиках» became «стул офисный **дна** колесиков»: `на` is two
+    # characters, so the vocabulary (which drops terms below three) never contained it, so it
+    # looked misspelled, and `дна` is one edit away and present.
+    rewriter = SymSpellRewriter(FakeVocabulary("дна", "стул", "офисный"))
+
+    assert not is_correctable("на")
+    assert rewriter.rewrite("стул офисный на") is None
+
+
+def test_a_token_containing_a_digit_is_never_corrected() -> None:
+    # `PH2` is a bit designation, `48` is a size, `2.03` is a weight. None of them is a
+    # misspelled Russian word, and an edit distance will claim otherwise given the chance.
+    rewriter = SymSpellRewriter(FakeVocabulary("пила", "размер", "масса"))
+
+    assert rewriter.rewrite("ph2 48 2.03") is None
+
+
+def test_a_candidate_starting_with_another_letter_is_rejected() -> None:
+    # «крестовая» → «ростовая» was two edits to a different word. A mistyped word almost
+    # always starts correctly, because the finger lands wrong inside the word.
+    rewriter = SymSpellRewriter(FakeVocabulary("ростовая"))
+
+    assert rewriter.rewrite("крестовая") is None
+
+
+def test_a_real_typo_inside_the_word_is_still_corrected() -> None:
+    # The guards must not cost the corrector its job: this is a genuine typo from
+    # «Мебель.xlsx», it keeps its first letter, and it is one deletion from the right word.
+    rewriter = SymSpellRewriter(FakeVocabulary("конструкция", "сварная"))
+
+    assert rewriter.rewrite("кострукция сварная") == "конструкция сварная"
+
+
+def test_two_edits_are_only_allowed_on_a_long_word() -> None:
+    # At distance 2 a short word reaches an unrelated one; `SHORT_TOKEN_LENGTH` is the line.
+    rewriter = SymSpellRewriter(FakeVocabulary("корпус"))
+
+    assert rewriter.rewrite("короб") is None
+
+
+# --- per-word reporting ---------------------------------------------------------------------
+
+
+def test_edits_are_reported_word_by_word() -> None:
+    correction = Correction(
+        original="кострукция сварная стол",
+        corrected="конструкция сварная стол",
+        source=CorrectionSource.DICTIONARY,
+    )
+
+    assert [(edit.before, edit.after) for edit in correction.edits] == [
+        ("кострукция", "конструкция")
+    ]
+
+
+def test_a_rewrite_that_changed_the_word_count_reports_no_edits() -> None:
+    # There is no honest pairing, and a wrong pairing shown against the user's own words is
+    # worse than the whole-query message the caller falls back to.
+    correction = Correction("два слова", "одно", CorrectionSource.LLM)
+
+    assert correction.edits == []
+
+
+def test_an_inflected_form_is_not_called_a_typo() -> None:
+    # «колесиках» is spelled perfectly. Announcing a typo in correct input is a false
+    # accusation, and the task scores the *quality* of automatic correction.
+    inflection = Correction("колесиках", "колесиков", CorrectionSource.DICTIONARY).edits[0]
+    mistake = Correction("кострукция", "конструкция", CorrectionSource.DICTIONARY).edits[0]
+
+    assert inflection.is_inflection
+    assert not mistake.is_inflection

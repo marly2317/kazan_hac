@@ -50,6 +50,16 @@ class AnalyzeView(APIView):
                 description=data["description"], correct_typos=data["correct"]
             )
         )
+
+        # Заметка тем, кто ведёт справочник: какие слова разбор не смог объяснить найденной
+        # позицией. В ответ не попадает ничего — наблюдение адресовано не пользователю, и
+        # сообщать ему «возможно, в КТРУ чего-то не хватает» значило бы перекладывать на него
+        # чужую задачу. Смотреть накопленное — в админке.
+        if data["settled"]:
+            gaps = container.record_reference_gaps()
+            if gaps is not None:
+                gaps.execute(analysis)
+
         return Response(
             AnalysisSerializer.from_analysis(analysis), status=status.HTTP_200_OK
         )

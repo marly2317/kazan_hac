@@ -27,7 +27,15 @@ const routes: RouteRecordRaw[] = [
     path: '/',
     component: AppShell,
     children: [
-      { path: '', redirect: { name: 'products' } },
+      { path: '', redirect: { name: 'autofill' } },
+      {
+        // Основной сценарий хакатона, поэтому он же — точка входа. Поиск по демо-каталогу
+        // остаётся отдельной вкладкой: он показывает исправление опечаток на товарах, но
+        // путь «описание → характеристики → код КТРУ» проходится здесь.
+        path: 'autofill',
+        name: 'autofill',
+        component: () => import('@/modules/autofill/presentation/AutofillView.vue'),
+      },
       {
         path: 'products',
         name: 'products',
@@ -61,9 +69,9 @@ router.beforeEach(async (to) => {
     return { name: 'login', query: to.fullPath === '/' ? {} : { next: to.fullPath } };
   }
 
-  // A signed-in user has no business on the login form; send them to the catalogue instead.
+  // A signed-in user has no business on the login form; send them to the main screen instead.
   if (to.meta.public && session.isAuthenticated) {
-    return { name: 'products' };
+    return { name: 'autofill' };
   }
 
   return true;

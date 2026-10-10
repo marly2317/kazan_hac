@@ -20,7 +20,7 @@ import threading
 from symspellpy import SymSpell, Verbosity
 
 from apps.spellcheck.application.ports import VocabularySource
-from apps.spellcheck.domain.correction import tokenize
+from apps.spellcheck.domain.correction import is_correctable, tokenize
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,12 @@ MAX_EDIT_DISTANCE = 2
 
 #: Below this length an edit of 2 is most of the word, so corrections become arbitrary
 #: (``ток`` → ``сок`` → ``бок``). Short tokens are only fixed at distance 1.
-SHORT_TOKEN_LENGTH = 5
+#:
+#: Raised from 5 to 7 after «крестовая» → «ростовая»: at distance 2 a nine-letter word that is
+#: simply absent from the reference reaches a different word entirely, and the result is not a
+#: corrected query but a different query. Two edits are only safe once the remaining letters
+#: still carry the word.
+SHORT_TOKEN_LENGTH = 7
 
 
 class SymSpellRewriter:
@@ -93,7 +98,14 @@ class SymSpellRewriter:
         if best == 0:
             return []
         # Ordered by frequency, which is the tiebreak when context says nothing.
-        return [s.term for s in suggestions if s.distance == best]
+        tied = [s.term for s in suggestions if s.distance == best]
+        # The first letter has to survive. A mistyped word almost always starts correctly —
+        # the finger lands wrong *inside* the word — so a candidate beginning with a different
+        # letter is not this word misspelled, it is another word that happens to be close.
+        # This is the rule that stops «крестовая» → «ростовая» and «на» → «дна»: without it,
+        # any word absent from the reference is rewritten into the nearest word present, and a
+        # reference covering 72 tool names turns every unfamiliar tool into one of those 72.
+        return [term for term in tied if term[:1] == token[:1]]
 
     def _choose(self, candidates: list[str], left: str, right: str) -> str:
         """Pick the candidate the surrounding words support.
@@ -130,9 +142,10 @@ class SymSpellRewriter:
         replacements: dict[str, str] = {}
 
         for position, token in enumerate(tokens):
-            # Pure digits are article numbers, sizes and quantities; "correcting" them is
-            # always wrong — 500 is not a misspelling of 50.
-            if token.isdigit() or token in replacements:
+            # `is_correctable` holds the rules about *which* words may be touched — short ones,
+            # function words and anything with a digit in it are left alone. They live in the
+            # domain because they are the same for every stage, not a property of SymSpell.
+            if token in replacements or not is_correctable(token):
                 continue
 
             candidates = self._candidates(index, token)

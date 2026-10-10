@@ -43,7 +43,7 @@ async function submit(): Promise<void> {
       email: email.value.trim(),
       password: password.value,
     });
-    await router.replace('/products');
+    await router.replace('/autofill');
   } catch (cause) {
     if (cause instanceof ApiError) {
       error.value = cause.message;

@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Автозаполнение ключевых характеристик в СТЕ — схема реализации в нотации BPMN 2.0.
+
+  Файл открывается в любом редакторе BPMN (bpmn.io, Camunda Modeler, Visual Paradigm) и
+  содержит координаты, поэтому отображается так же, как задумано, без ручной раскладки.
+  Рисунок для чтения в репозитории — docs/diagrams/autofill-bpmn.svg.
+
+  Каждая задача схемы соответствует конкретному месту в коде; соответствие перечислено в
+  docs/ALGORITHM.md.
+-->
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             id="autofill_definitions"
+             targetNamespace="http://tenderhack.kazan/autofill">
+  <process id="autofill" name="Автозаполнение характеристик СТЕ и подбор кода КТРУ" isExecutable="false">
+    <startEvent id="start" name="Пользователь ввёл описание товара" />
+    <task id="t_norm" name="Нормализовать текст" />
+    <task id="t_spell" name="Исправить раскладку и опечатки по словарю КТРУ" />
+    <exclusiveGateway id="g_changed" name="Текст изменён?" />
+    <task id="t_report" name="Сообщить о правках пословно: опечатка или форма справочника" />
+    <task id="t_search" name="Найти позиции КТРУ по наименованию (триграммы, GIN)" />
+    <task id="t_head" name="Отбросить позиции, которые описание не называет" />
+    <exclusiveGateway id="g_any" name="Кандидаты есть?" />
+    <endEvent id="e_empty" name="Позиция не определена" />
+    <task id="t_extract" name="Извлечь характеристики: текстовые значения и число + единица" />
+    <task id="t_unify" name="Привести значения и единицы к ОКЕИ (500 г в 0.5 кг)" />
+    <task id="t_filter" name="Отфильтровать кандидатов каждой характеристикой, записать шаг сужения" />
+    <task id="t_check" name="Проверить значения по справочнику: диапазон, единица, перечень" />
+    <exclusiveGateway id="g_conf" name="Уверенность не ниже порога?" />
+    <endEvent id="e_nomatch" name="Воздержаться, показать близкие позиции" />
+    <exclusiveGateway id="g_one" name="Остался один код?" />
+    <endEvent id="e_ok" name="Код КТРУ определён" />
+    <task id="t_next" name="Предложить, что уточнить: характеристика, которая сильнее делит остаток" />
+    <endEvent id="e_more" name="Нужно уточнить: пользователь дополняет описание" />
+    <sequenceFlow id="f0" sourceRef="start" targetRef="t_norm" />
+    <sequenceFlow id="f1" sourceRef="t_norm" targetRef="t_spell" />
+    <sequenceFlow id="f2" sourceRef="t_spell" targetRef="g_changed" />
+    <sequenceFlow id="f3" sourceRef="g_changed" targetRef="t_report" name="да" />
+    <sequenceFlow id="f4" sourceRef="t_report" targetRef="t_search" />
+    <sequenceFlow id="f5" sourceRef="g_changed" targetRef="t_search" name="нет" />
+    <sequenceFlow id="f6" sourceRef="t_search" targetRef="t_head" />
+    <sequenceFlow id="f7" sourceRef="t_head" targetRef="g_any" />
+    <sequenceFlow id="f8" sourceRef="g_any" targetRef="e_empty" name="нет" />
+    <sequenceFlow id="f9" sourceRef="g_any" targetRef="t_extract" name="да" />
+    <sequenceFlow id="f10" sourceRef="t_extract" targetRef="t_unify" />
+    <sequenceFlow id="f11" sourceRef="t_unify" targetRef="t_filter" />
+    <sequenceFlow id="f12" sourceRef="t_filter" targetRef="t_check" />
+    <sequenceFlow id="f13" sourceRef="t_check" targetRef="g_conf" />
+    <sequenceFlow id="f14" sourceRef="g_conf" targetRef="e_nomatch" name="нет" />
+    <sequenceFlow id="f15" sourceRef="g_conf" targetRef="g_one" name="да" />
+    <sequenceFlow id="f16" sourceRef="g_one" targetRef="e_ok" name="да" />
+    <sequenceFlow id="f17" sourceRef="g_one" targetRef="t_next" name="нет" />
+    <sequenceFlow id="f18" sourceRef="t_next" targetRef="e_more" />
+  </process>
+  <bpmndi:BPMNDiagram id="autofill_diagram">
+    <bpmndi:BPMNPlane id="autofill_plane" bpmnElement="autofill">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="125" y="300" width="40" height="40" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="t_norm_di" bpmnElement="t_norm">
+        <dc:Bounds x="290" y="275" width="170" height="90" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="t_spell_di" bpmnElement="t_spell">
+        <dc:Bounds x="520" y="275" width="170" height="90" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="g_changed_di" bpmnElement="g_changed" isMarkerVisible="true">
+        <dc:Bounds x="810" y="295" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="t_report_di" bpmnElement="t_report">
+        <dc:Bounds x="750" y="90" width="170" height="90" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="t_search_di" bpmnElement="t_search">
+        <dc:Bounds x="980" y="275" width="170" height="90" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="t_head_di" bpmnElement="t_head">
+        <dc:Bounds x="1210" y="275" width="170" height="90" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="g_any_di" bpmnElement="g_any" isMarkerVisible="true">
+        <dc:Bounds x="1500" y="295" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e_empty_di" bpmnElement="e_empty">
+        <dc:Bounds x="1505" y="115" width="40" height="40" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="t_extract_di" bpmnElement="t_extract">
+        <dc:Bounds x="60" y="645" width="170" height="90" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="t_unify_di" bpmnElement="t_unify">
+        <dc:Bounds x="290" y="645" width="170" height="90" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="t_filter_di" bpmnElement="t_filter">
+        <dc:Bounds x="520" y="645" width="170" height="90" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="t_check_di" bpmnElement="t_check">
+        <dc:Bounds x="750" y="645" width="170" height="90" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="g_conf_di" bpmnElement="g_conf" isMarkerVisible="true">
+        <dc:Bounds x="1040" y="665" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e_nomatch_di" bpmnElement="e_nomatch">
+        <dc:Bounds x="1045" y="855" width="40" height="40" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="g_one_di" bpmnElement="g_one" isMarkerVisible="true">
+        <dc:Bounds x="1270" y="665" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e_ok_di" bpmnElement="e_ok">
+        <dc:Bounds x="1505" y="670" width="40" height="40" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="t_next_di" bpmnElement="t_next">
+        <dc:Bounds x="1210" y="830" width="170" height="90" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e_more_di" bpmnElement="e_more">
+        <dc:Bounds x="1505" y="855" width="40" height="40" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f0_di" bpmnElement="f0">
+        <di:waypoint x="165" y="320" />
+        <di:waypoint x="290" y="320" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="460" y="320" />
+        <di:waypoint x="520" y="320" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="690" y="320" />
+        <di:waypoint x="810" y="320" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3">
+        <di:waypoint x="835" y="295" />
+        <di:waypoint x="835" y="180" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f4_di" bpmnElement="f4">
+        <di:waypoint x="920" y="135" />
+        <di:waypoint x="1065" y="135" />
+        <di:waypoint x="1065" y="275" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f5_di" bpmnElement="f5">
+        <di:waypoint x="860" y="320" />
+        <di:waypoint x="980" y="320" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f6_di" bpmnElement="f6">
+        <di:waypoint x="1150" y="320" />
+        <di:waypoint x="1210" y="320" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f7_di" bpmnElement="f7">
+        <di:waypoint x="1380" y="320" />
+        <di:waypoint x="1500" y="320" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f8_di" bpmnElement="f8">
+        <di:waypoint x="1525" y="295" />
+        <di:waypoint x="1525" y="155" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f9_di" bpmnElement="f9">
+        <di:waypoint x="1525" y="345" />
+        <di:waypoint x="1525" y="412" />
+        <di:waypoint x="145" y="412" />
+        <di:waypoint x="145" y="645" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f10_di" bpmnElement="f10">
+        <di:waypoint x="230" y="690" />
+        <di:waypoint x="290" y="690" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f11_di" bpmnElement="f11">
+        <di:waypoint x="460" y="690" />
+        <di:waypoint x="520" y="690" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f12_di" bpmnElement="f12">
+        <di:waypoint x="690" y="690" />
+        <di:waypoint x="750" y="690" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f13_di" bpmnElement="f13">
+        <di:waypoint x="920" y="690" />
+        <di:waypoint x="1040" y="690" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f14_di" bpmnElement="f14">
+        <di:waypoint x="1065" y="715" />
+        <di:waypoint x="1065" y="855" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f15_di" bpmnElement="f15">
+        <di:waypoint x="1090" y="690" />
+        <di:waypoint x="1270" y="690" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f16_di" bpmnElement="f16">
+        <di:waypoint x="1320" y="690" />
+        <di:waypoint x="1505" y="690" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f17_di" bpmnElement="f17">
+        <di:waypoint x="1295" y="715" />
+        <di:waypoint x="1295" y="830" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f18_di" bpmnElement="f18">
+        <di:waypoint x="1380" y="875" />
+        <di:waypoint x="1505" y="875" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>

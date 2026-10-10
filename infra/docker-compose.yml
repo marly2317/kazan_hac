@@ -51,6 +51,8 @@ services:
       CSRF_COOKIE_SECURE: ${CSRF_COOKIE_SECURE:-0}
       SEED_DEMO_USER: ${SEED_DEMO_USER:-0}
       SEED_CATALOG: ${SEED_CATALOG:-0}
+      # Сбор наблюдений о нехватке в справочнике — необязательная возможность, см. .env.example.
+      COLLECT_REFERENCE_GAPS: ${COLLECT_REFERENCE_GAPS:-1}
       # Empty by default: the rules forbid proprietary LLM APIs, so nothing is configured
       # until an open model is pointed at. See infra/.env.example.
       LLM_BASE_URL: ${LLM_BASE_URL:-}
@@ -73,6 +75,16 @@ services:
     build:
       context: ../frontend
       dockerfile: Dockerfile
+      args:
+        # Ссылка «войти как демонстрационный пользователь» под формой входа. Пусто по
+        # умолчанию — ссылки тогда нет. Заполнять только вместе с `SEED_DEMO_USER=1`, иначе
+        # ссылка будет предлагать вход в несуществующую учётную запись.
+        #
+        # Отдельные переменные, а не вывод из `SEED_DEMO_USER`: Compose не умеет условий, а
+        # `${SEED_DEMO_USER:+…}` сработало бы и на значении `0`. Явное дублирование честнее
+        # выражения, которое выглядит связанным, но связывает не то.
+        VITE_DEMO_EMAIL: ${DEMO_LOGIN_EMAIL:-}
+        VITE_DEMO_PASSWORD: ${DEMO_LOGIN_PASSWORD:-}
     restart: unless-stopped
     # Static files only; it never reaches the database or the backend directly.
 

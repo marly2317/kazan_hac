@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1730 980" width="1730" height="980" font-family="Open Sans, Segoe UI, Arial, sans-serif">
+<rect width="1730" height="980" fill="#ffffff"/>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#9aa7ba"/></marker></defs>
+<text x="30" y="42" font-size="20" font-weight="700" fill="#264b82">Автозаполнение характеристик СТЕ и подбор кода КТРУ — BPMN</text>
+<path d="M165,320 L290,320" fill="none" stroke="#9aa7ba" stroke-width="1.6" marker-end="url(#a)"/>
+<path d="M460,320 L520,320" fill="none" stroke="#9aa7ba" stroke-width="1.6" marker-end="url(#a)"/>
+<path d="M690,320 L810,320" fill="none" stroke="#9aa7ba" stroke-width="1.6" marker-end="url(#a)"/>
+<path d="M835,295 L835,180" fill="none" stroke="#9aa7ba" stroke-width="1.6" marker-end="url(#a)"/>
+<text x="842" y="288" font-size="12" font-weight="600" fill="#667181">да</text>
+<path d="M920,135 L1065,135 L1065,275" fill="none" stroke="#9aa7ba" stroke-width="1.6" marker-end="url(#a)"/>
+<path d="M860,320 L980,320" fill="none" stroke="#9aa7ba" stroke-width="1.6" marker-end="url(#a)"/>
+<text x="867" y="313" font-size="12" font-weight="600" fill="#667181">нет</text>
+<path d="M1150,320 L1210,320" fill="none" stroke="#9aa7ba" stroke-width="1.6" marker-end="url(#a)"/>
+<path d="M1380,320 L1500,320" fill="none" stroke="#9aa7ba" stroke-width="1.6" marker-end="url(#a)"/>
+<path d="M1525,295 L1525,155" fill="none" stroke="#9aa7ba" stroke-width="1.6" marker-end="url(#a)"/>
+<text x="1532" y="288" font-size="12" font-weight="600" fill="#667181">нет</text>
+<path d="M1525,345 L1525,412 L145,412 L145,645" fill="none" stroke="#9aa7ba" stroke-width="1.6" marker-end="url(#a)"/>
+<text x="1532" y="399" font-size="12" font-weight="600" fill="#667181">да</text>
+<path d="M230,690 L290,690" fill="none" stroke="#9aa7ba" stroke-width="1.6" marker-end="url(#a)"/>
+<path d="M460,690 L520,690" fill="none" stroke="#9aa7ba" stroke-width="1.6" marker-end="url(#a)"/>
+<path d="M690,690 L750,690" fill="none" stroke="#9aa7ba" stroke-width="1.6" marker-end="url(#a)"/>
+<path d="M920,690 L1040,690" fill="none" stroke="#9aa7ba" stroke-width="1.6" marker-end="url(#a)"/>
+<path d="M1065,715 L1065,855" fill="none" stroke="#9aa7ba" stroke-width="1.6" marker-end="url(#a)"/>
+<text x="1072" y="708" font-size="12" font-weight="600" fill="#667181">нет</text>
+<path d="M1090,690 L1270,690" fill="none" stroke="#9aa7ba" stroke-width="1.6" marker-end="url(#a)"/>
+<text x="1097" y="683" font-size="12" font-weight="600" fill="#667181">да</text>
+<path d="M1320,690 L1505,690" fill="none" stroke="#9aa7ba" stroke-width="1.6" marker-end="url(#a)"/>
+<text x="1327" y="683" font-size="12" font-weight="600" fill="#667181">да</text>
+<path d="M1295,715 L1295,830" fill="none" stroke="#9aa7ba" stroke-width="1.6" marker-end="url(#a)"/>
+<text x="1302" y="708" font-size="12" font-weight="600" fill="#667181">нет</text>
+<path d="M1380,875 L1505,875" fill="none" stroke="#9aa7ba" stroke-width="1.6" marker-end="url(#a)"/>
+<circle cx="145" cy="320" r="20" fill="#ffffff" stroke="#264b82" stroke-width="1.8"/>
+<text x="145" y="346" font-size="12" font-weight="600" fill="#264b82" text-anchor="middle">Пользователь ввёл</text>
+<text x="145" y="361" font-size="12" font-weight="600" fill="#264b82" text-anchor="middle">описание товара</text>
+<rect x="290" y="275" width="170" height="90" rx="4" fill="#f3f6fb" stroke="#264b82" stroke-width="1.6"/>
+<text x="375" y="324" font-size="12" font-weight="400" fill="#1a1a1a" text-anchor="middle">Нормализовать текст</text>
+<rect x="520" y="275" width="170" height="90" rx="4" fill="#f3f6fb" stroke="#264b82" stroke-width="1.6"/>
+<text x="605" y="317" font-size="12" font-weight="400" fill="#1a1a1a" text-anchor="middle">Исправить раскладку</text>
+<text x="605" y="332" font-size="12" font-weight="400" fill="#1a1a1a" text-anchor="middle">и опечатки по словарю КТРУ</text>
+<path d="M835,295 L860,320 L835,345 L810,320 z" fill="#fff8e8" stroke="#c77700" stroke-width="1.6"/>
+<path d="M824,309 L846,331 M846,309 L824,331" stroke="#c77700" stroke-width="1.8"/>
+<text x="835" y="351" font-size="12" font-weight="600" fill="#1a1a1a" text-anchor="middle">Текст</text>
+<text x="835" y="366" font-size="12" font-weight="600" fill="#1a1a1a" text-anchor="middle">изменён?</text>
+<rect x="750" y="90" width="170" height="90" rx="4" fill="#f3f6fb" stroke="#264b82" stroke-width="1.6"/>
+<text x="835" y="125" font-size="12" font-weight="400" fill="#1a1a1a" text-anchor="middle">Сообщить о правках</text>
+<text x="835" y="140" font-size="12" font-weight="400" fill="#1a1a1a" text-anchor="middle">пословно: опечатка</text>
+<text x="835" y="155" font-size="12" font-weight="400" fill="#1a1a1a" text-anchor="middle">или форма справочника</text>
+<rect x="980" y="275" width="170" height="90" rx="4" fill="#f3f6fb" stroke="#264b82" stroke-width="1.6"/>
+<text x="1065" y="310" font-size="12" font-weight="400" fill="#1a1a1a" text-anchor="middle">Найти позиции КТРУ</text>
+<text x="1065" y="325" font-size="12" font-weight="400" fill="#1a1a1a" text-anchor="middle">по наименованию</text>
+<text x="1065" y="340" font-size="12" font-weight="400" fill="#1a1a1a" text-anchor="middle">(триграммы, GIN)</text>
+<rect x="1210" y="275" width="170" height="90" rx="4" fill="#f3f6fb" stroke="#264b82" stroke-width="1.6"/>
+<text x="1295" y="310" font-size="12" font-weight="400" fill="#1a1a1a" text-anchor="middle">Отбросить позиции,</text>
+<text x="1295" y="325" font-size="12" font-weight="400" fill="#1a1a1a" text-anchor="middle">которые описание</text>
+<text x="1295" y="340" font-size="12" font-weight="400" fill="#1a1a1a" text-anchor="middle">не называет</text>
+<path d="M1525,295 L1550,320 L1525,345 L1500,320 z" fill="#fff8e8" stroke="#c77700" stroke-width="1.6"/>
+<path d="M1514,309 L1536,331 M1536,309 L1514,331" stroke="#c77700" stroke-width="1.8"/>
+<text x="1525" y="351" font-size="12" font-weight="600" fill="#1a1a1a" text-anchor="middle">Кандидаты</text>
+<text x="1525" y="366" font-size="12" font-weight="600" fill="#1a1a1a" text-anchor="middle">есть?</text>
+<circle cx="1525" cy="135" r="20" fill="#ffffff" stroke="#db2b21" stroke-width="3.2"/>
+<text x="1525" y="161" font-size="12" font-weight="600" fill="#db2b21" text-anchor="middle">Позиция</text>
+<text x="1525" y="176" font-size="12" font-weight="600" fill="#db2b21" text-anchor="middle">не определена</text>
+<rect x="60" y="645" width="170" height="90" rx="4" fill="#f3f6fb" stroke="#264b82" stroke-width="1.6"/>
+<text x="145" y="680" font-size="12" font-weight="400" fill="#1a1a1a" text-anchor="middle">Извлечь характеристики:</text>
+<text x="145" y="695" font-size="12" font-weight="400" fill="#1a1a1a" text-anchor="middle">текстовые значения</text>
+<text x="145" y="710" font-size="12" font-weight="400" fill="#1a1a1a" text-anchor="middle">и число + единица</text>
+<rect x="290" y="645" width="170" height="90" rx="4" fill="#f3f6fb" stroke="#264b82" stroke-width="1.6"/>
+<text x="375" y="680" font-size="12" font-weight="400" fill="#1a1a1a" text-anchor="middle">Привести значения</text>
+<text x="375" y="695" font-size="12" font-weight="400" fill="#1a1a1a" text-anchor="middle">и единицы к ОКЕИ</text>
+<text x="375" y="710" font-size="12" font-weight="400" fill="#1a1a1a" text-anchor="middle">(500 г в 0.5 кг)</text>
+<rect x="520" y="645" width="170" height="90" rx="4" fill="#f3f6fb" stroke="#264b82" stroke-width="1.6"/>
+<text x="605" y="680" font-size="12" font-weight="400" fill="#1a1a1a" text-anchor="middle">Отфильтровать кандидатов</text>
+<text x="605" y="695" font-size="12" font-weight="400" fill="#1a1a1a" text-anchor="middle">каждой характеристикой,</text>
+<text x="605" y="710" font-size="12" font-weight="400" fill="#1a1a1a" text-anchor="middle">записать шаг сужения</text>
+<rect x="750" y="645" width="170" height="90" rx="4" fill="#f3f6fb" stroke="#264b82" stroke-width="1.6"/>
+<text x="835" y="680" font-size="12" font-weight="400" fill="#1a1a1a" text-anchor="middle">Проверить значения</text>
+<text x="835" y="695" font-size="12" font-weight="400" fill="#1a1a1a" text-anchor="middle">по справочнику:</text>
+<text x="835" y="710" font-size="12" font-weight="400" fill="#1a1a1a" text-anchor="middle">диапазон, единица, перечень</text>
+<path d="M1065,665 L1090,690 L1065,715 L1040,690 z" fill="#fff8e8" stroke="#c77700" stroke-width="1.6"/>
+<path d="M1054,679 L1076,701 M1076,679 L1054,701" stroke="#c77700" stroke-width="1.8"/>
+<text x="1065" y="721" font-size="12" font-weight="600" fill="#1a1a1a" text-anchor="middle">Уверенность</text>
+<text x="1065" y="736" font-size="12" font-weight="600" fill="#1a1a1a" text-anchor="middle">не ниже порога?</text>
+<circle cx="1065" cy="875" r="20" fill="#ffffff" stroke="#db2b21" stroke-width="3.2"/>
+<text x="1065" y="887" font-size="12" font-weight="600" fill="#db2b21" text-anchor="middle">Воздержаться,</text>
+<text x="1065" y="902" font-size="12" font-weight="600" fill="#db2b21" text-anchor="middle">показать близкие</text>
+<text x="1065" y="917" font-size="12" font-weight="600" fill="#db2b21" text-anchor="middle">позиции</text>
+<path d="M1295,665 L1320,690 L1295,715 L1270,690 z" fill="#fff8e8" stroke="#c77700" stroke-width="1.6"/>
+<path d="M1284,679 L1306,701 M1306,679 L1284,701" stroke="#c77700" stroke-width="1.8"/>
+<text x="1295" y="721" font-size="12" font-weight="600" fill="#1a1a1a" text-anchor="middle">Остался</text>
+<text x="1295" y="736" font-size="12" font-weight="600" fill="#1a1a1a" text-anchor="middle">один код?</text>
+<circle cx="1525" cy="690" r="20" fill="#ffffff" stroke="#087e53" stroke-width="3.2"/>
+<text x="1525" y="716" font-size="12" font-weight="600" fill="#087e53" text-anchor="middle">Код КТРУ</text>
+<text x="1525" y="731" font-size="12" font-weight="600" fill="#087e53" text-anchor="middle">определён</text>
+<rect x="1210" y="830" width="170" height="90" rx="4" fill="#f3f6fb" stroke="#264b82" stroke-width="1.6"/>
+<text x="1295" y="865" font-size="12" font-weight="400" fill="#1a1a1a" text-anchor="middle">Предложить, что уточнить:</text>
+<text x="1295" y="880" font-size="12" font-weight="400" fill="#1a1a1a" text-anchor="middle">характеристика, которая</text>
+<text x="1295" y="895" font-size="12" font-weight="400" fill="#1a1a1a" text-anchor="middle">сильнее делит остаток</text>
+<circle cx="1525" cy="875" r="20" fill="#ffffff" stroke="#db2b21" stroke-width="3.2"/>
+<text x="1525" y="887" font-size="12" font-weight="600" fill="#db2b21" text-anchor="middle">Нужно уточнить:</text>
+<text x="1525" y="902" font-size="12" font-weight="600" fill="#db2b21" text-anchor="middle">пользователь</text>
+<text x="1525" y="917" font-size="12" font-weight="600" fill="#db2b21" text-anchor="middle">дополняет описание</text>
+</svg>

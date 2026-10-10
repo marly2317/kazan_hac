@@ -14,7 +14,12 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 
 from apps.autofill.application.use_cases.analyze_description import AnalyzeDescription
+from apps.autofill.application.use_cases.record_gaps import RecordReferenceGaps
+from apps.autofill.application.use_cases.suggest_terms import SuggestTerms
 from apps.autofill.infrastructure.catalog import DjangoKtruCatalog
+from apps.autofill.infrastructure.gaps import DjangoGapRecorder
+from apps.autofill.infrastructure.suggest_index import KtruSuggestionIndex
+from apps.autofill.infrastructure.vocabulary import CachedReferenceVocabulary
 from apps.catalog.application.use_cases.search_products import SearchProducts
 from apps.catalog.infrastructure.repositories import DjangoProductRepository
 from apps.catalog.infrastructure.vocabulary import CatalogVocabulary
@@ -126,6 +131,9 @@ def reset_spelling_indexes() -> None:
     units.invalidate()
     layout_rewriter.cache_clear()
     symspell_rewriter.cache_clear()
+    reference_vocabulary.cache_clear()
+    suggestion_index().invalidate()
+    suggestion_index.cache_clear()
 
 
 def correct_query() -> CorrectQuery:
@@ -166,3 +174,32 @@ def analyze_description() -> AnalyzeDescription:
     from apps.ktru.infrastructure.units import canonical_unit
 
     return AnalyzeDescription(ktru_catalog(), correct_query(), canonical_unit)
+
+
+@lru_cache(maxsize=1)
+def suggestion_index() -> KtruSuggestionIndex:
+    """Словарь подсказок. Кэшируется по той же причине, что и индексы корректора: строится
+    обходом всего справочника, а обслуживает тысячи запросов по мере набора."""
+    return KtruSuggestionIndex()
+
+
+def suggest_terms() -> SuggestTerms:
+    return SuggestTerms(suggestion_index())
+
+
+@lru_cache(maxsize=1)
+def reference_vocabulary() -> CachedReferenceVocabulary:
+    """Множество слов справочника. Кэшируется по той же причине, что и индексы корректора."""
+    return CachedReferenceVocabulary(ktru_vocabulary())
+
+
+def record_reference_gaps() -> RecordReferenceGaps | None:
+    """Сбор наблюдений о нехватке в справочнике, либо ``None``, когда он выключен.
+
+    ``None``, а не заглушка-пустышка: вызывающая сторона и так обязана решить, собирать ли
+    наблюдения, и явное «возможности нет» читается в коде представления честнее, чем объект,
+    который молча ничего не делает.
+    """
+    if not settings.COLLECT_REFERENCE_GAPS:
+        return None
+    return RecordReferenceGaps(DjangoGapRecorder(), reference_vocabulary())

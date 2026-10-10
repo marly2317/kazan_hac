@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { LogOut, Package, User } from '@lucide/vue';
+import { LogOut, Package, User, Wand2 } from '@lucide/vue';
 import { useRouter } from 'vue-router';
 
 import { useSessionStore } from '@/modules/auth/application/sessionStore';
+import { useAutofillStore } from '@/modules/autofill/application/autofillStore';
 import { useSearchStore } from '@/modules/catalog/application/searchStore';
 
 /**
@@ -10,6 +11,7 @@ import { useSearchStore } from '@/modules/catalog/application/searchStore';
  */
 const session = useSessionStore();
 const search = useSearchStore();
+const autofill = useAutofillStore();
 const router = useRouter();
 
 async function signOut(): Promise<void> {
@@ -17,6 +19,9 @@ async function signOut(): Promise<void> {
   // The results belong to the session that just ended; leaving them would show the next
   // person who signs in on this browser the previous one's search.
   search.reset();
+  // Описание товара — такие же данные сессии, как и результаты поиска: следующий, кто войдёт в
+  // этом браузере, не должен увидеть чужой разбор.
+  autofill.reset();
   await router.replace('/login');
 }
 </script>
@@ -24,12 +29,16 @@ async function signOut(): Promise<void> {
 <template>
   <div class="app">
     <header class="app-header">
-      <RouterLink to="/products" aria-label="Каталог">
+      <RouterLink to="/autofill" aria-label="Автозаполнение СТЕ">
         <img class="logo" src="/assets/logo-mark.png" alt="Портал поставщиков" />
       </RouterLink>
       <span class="header-divider" />
 
       <nav class="tabs" aria-label="Разделы">
+        <RouterLink class="tab" to="/autofill">
+          <Wand2 :size="17" aria-hidden="true" />
+          <span>Автозаполнение</span>
+        </RouterLink>
         <RouterLink class="tab" to="/products">
           <Package :size="17" aria-hidden="true" />
           <span>Товары</span>
