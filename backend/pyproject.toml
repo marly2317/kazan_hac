@@ -14,10 +14,13 @@ dependencies = [
     "whitenoise==6.12.0",
     "symspellpy==6.10.0",
     "httpx==0.28.1",
-    "opensearch-py==2.8.0",
+    "lxml==6.1.3",
+    "snowballstemmer==3.1.1",
+    "jsonschema==4.26.0",
+    "numpy==2.5.3",
     # Энкодер для семантической части поиска. `torch` ставится из CPU-индекса (см. Dockerfile):
     # колёса с CUDA — это несколько гигабайт ради вычислений, которых на стенде не будет.
-    "sentence-transformers==3.4.1",
+    "sentence-transformers==6.1.0",
 ]
 
 [dependency-groups]

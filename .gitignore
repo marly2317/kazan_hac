@@ -21,3 +21,4 @@ infra/.env
 .DS_Store
 .idea/
 .vscode/
+.secrets/
