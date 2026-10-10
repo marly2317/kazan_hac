@@ -99,7 +99,7 @@ def fake_llm(monkeypatch, kb):
     def extract(client, text, family):
         calls["extract"] += 1
         values = {key: ExtractedValue(char_key=key, status=Status.ABSENT) for key in family.chars}
-        if family.id == GRINDER:
+        if family.id == GRINDER and "болгарка" in text:
             values["вид"] = _ev("вид", "Углошлифовальная машина", quote="болгарка")
             if "125" in text:
                 values["диаметр диска"] = _ev("диаметр диска", 125.0, "мм", "125мм")
@@ -114,6 +114,7 @@ def fake_llm(monkeypatch, kb):
 
 def test_llm_path_reaches_final_code(kb, fake_llm):
     pipeline = _pipeline(kb, llm=_Llm())
+    # «Углошлифовальная машина» в КТРУ — ровно один лист шлифмашины.
     result = pipeline.analyze("болгарка makita 125мм")
     assert result["family"]["id"] == GRINDER
     assert result["final_code"] == GRINDER_ANGLE_125
@@ -126,7 +127,8 @@ def test_llm_path_reaches_final_code(kb, fake_llm):
 
 def test_question_then_button_answer_without_llm(kb, fake_llm):
     pipeline = _pipeline(kb, llm=_Llm())
-    first = pipeline.analyze("болгарка makita")
+    # Вид не назван — у шлифмашины 8 листьев, и первый вопрос — о виде.
+    first = pipeline.analyze("шлифмашина makita")
     assert first["stage"] == "question"
     question = first["question"]
     assert question["kind"] == "char" and question["options"]
@@ -139,7 +141,7 @@ def test_question_then_button_answer_without_llm(kb, fake_llm):
 
 def test_unknown_skips_question(kb, fake_llm):
     pipeline = _pipeline(kb, llm=_Llm())
-    first = pipeline.analyze("болгарка makita")
+    first = pipeline.analyze("шлифмашина makita")
     key = first["question"]["char_key"]
     second = pipeline.answer(first["session_id"], key, UNKNOWN_ANSWER)
     assert second["question"] is None or second["question"]["char_key"] != key
@@ -199,7 +201,7 @@ def test_answer_without_session_is_an_error(kb):
 def test_answer_text_unknown_is_skip(kb, fake_llm, monkeypatch):
     monkeypatch.setattr(llm_steps, "extract_one", lambda *args, **kwargs: None)
     pipeline = _pipeline(kb, llm=_Llm())
-    first = pipeline.analyze("болгарка makita")
+    first = pipeline.analyze("шлифмашина makita")
     key = first["question"]["char_key"]
     second = pipeline.answer_text(first["session_id"], key, "не знаю")
     assert not any(
