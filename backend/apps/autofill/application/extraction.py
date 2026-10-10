@@ -26,6 +26,7 @@ import re
 from dataclasses import dataclass, field, replace
 from decimal import Decimal, InvalidOperation
 
+from apps.autofill.domain.matching import stem
 from apps.ktru.domain.conversion import convert
 from apps.ktru.domain.entities import Characteristic
 from apps.ktru.domain.enums import ValueKind
@@ -50,15 +51,6 @@ _NOT_UNITS = {"и", "в", "на", "для", "из", "с", "по", "шт1", "го
 #: up the label of the *next* number in a list of dimensions.
 CONTEXT_BEFORE = 3
 CONTEXT_AFTER = 2
-
-#: Characters compared when matching a word against a characteristic's name.
-#:
-#: Russian inflects: the description says «шкаф», the characteristic is named «Высота шкафа»,
-#: and «высота» appears as «высоту», «высотой». A prefix of five characters makes those the
-#: same word without a morphological analyser — which, for matching against a fixed reference,
-#: would be a heavy dependency bought for nothing. Five is long enough that «шкаф» and «шкала»
-#: stay apart.
-STEM_LENGTH = 5
 
 #: Name words too generic to be evidence of anything: they appear in hundreds of characteristic
 #: names, so matching on them would give every characteristic the same affinity.
@@ -93,11 +85,6 @@ class TextMention:
     characteristic: str
     raw: str
     value: str
-
-
-def stem(word: str) -> str:
-    """The comparable core of a word. See :data:`STEM_LENGTH`."""
-    return word.casefold()[:STEM_LENGTH]
 
 
 def label_affinity(

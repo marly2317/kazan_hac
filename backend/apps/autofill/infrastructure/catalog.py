@@ -8,6 +8,7 @@ from django.contrib.postgres.search import TrigramSimilarity
 from django.db.models import Q
 
 from apps.autofill.domain.entities import PositionCandidate
+from apps.autofill.domain.query import SplitQuery
 from apps.ktru.domain.entities import Characteristic, PermittedValue, Unit
 from apps.ktru.domain.enums import CharacteristicType, ValueKind
 from apps.ktru.infrastructure.models import Characteristic as CharacteristicRow
@@ -29,7 +30,21 @@ RELATIVE_FLOOR = 0.45
 
 
 class DjangoKtruCatalog:
-    def find_positions(self, text: str, *, limit: int) -> list[PositionCandidate]:
+    """Поиск по Postgres — то, с чего всё начиналось, и запасной путь, когда движка нет.
+
+    Остаётся в проекте не «на всякий случай», а затем, чтобы переезд можно было **измерить**:
+    `manage.py bench_retrieval` сравнивает способы на одном наборе запросов, и сравнивать
+    можно только с тем, что работает.
+
+    ``whole_text`` выбирает, чем искать: называющей частью описания или описанием целиком.
+    Целиком — это прежнее поведение, и оно сохранено ровно для того, чтобы вклад разделения
+    запроса был виден отдельно от вклада движка.
+    """
+
+    def __init__(self, *, whole_text: bool = False) -> None:
+        self._whole_text = whole_text
+
+    def find_positions(self, query: SplitQuery, *, limit: int) -> list[PositionCandidate]:
         """Positions whose name resembles the description.
 
         Trigram similarity rather than full text: the description is a phrase like
@@ -37,6 +52,7 @@ class DjangoKtruCatalog:
         require every word to appear in the position name. Trigram scores partial overlap,
         which is what a loose description needs.
         """
+        text = query.full if self._whole_text else query.name
         words = [word for word in text.split() if len(word) >= 3][:8]
         if not words:
             return []

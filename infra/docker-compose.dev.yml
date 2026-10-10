@@ -2,13 +2,15 @@
 #
 #   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 #
-# Two differences from the deployable stack, and nothing else:
+# Three differences from the deployable stack, and nothing else:
 #
 # 1. the backend image is built with `INSTALL_DEV=1`, so `pytest` and `ruff` exist inside the
 #    container and the checks in the README can actually be run;
 # 2. the source tree is bind-mounted over `/app`, so an edit is visible without a rebuild.
 #    The production image deliberately copies the code in instead — a container whose
-#    behaviour depends on the host filesystem is not a deployable artefact.
+#    behaviour depends on the host filesystem is not a deployable artefact;
+# 3. the КТРУ archives are mounted read-only at /data/ktru, which is where the documented
+#    `import_ktru` command looks for them. Point `KTRU_DIR` at the organisers' folder.
 #
 # The mount shadows `/app`, including the virtualenv-free site-packages — those live outside
 # `/app`, so they survive it. `staticfiles` is given its own volume for the same reason: it is
@@ -21,6 +23,10 @@ services:
     volumes:
       - ../backend:/app
       - backend-staticfiles:/app/staticfiles
+      # Архивы КТРУ там, где их ждёт документированная команда импорта. Монтируются только в
+      # стеке разработки и только для чтения: боевому образу исходный XML не нужен — он
+      # работает с уже загруженным справочником.
+      - ${KTRU_DIR:-./ktru}:/data/ktru:ro
 
 volumes:
   backend-staticfiles:

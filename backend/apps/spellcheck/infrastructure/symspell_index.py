@@ -14,13 +14,13 @@ Russian word" but "a word that will actually match a product".
 from __future__ import annotations
 
 import logging
-import re
 import threading
 
 from symspellpy import SymSpell, Verbosity
 
 from apps.spellcheck.application.ports import VocabularySource
 from apps.spellcheck.domain.correction import is_correctable, tokenize
+from apps.spellcheck.domain.substitution import replace_token
 
 logger = logging.getLogger(__name__)
 
@@ -164,26 +164,6 @@ class SymSpellRewriter:
                 replacements[token] = choice
 
         for token, replacement in replacements.items():
-            corrected = _replace_token(corrected, token, replacement)
+            corrected = replace_token(corrected, token, replacement)
 
         return corrected if replacements else None
-
-
-def _match_case(sample: str, replacement: str) -> str:
-    """Give ``replacement`` the capitalisation ``sample`` had.
-
-    The vocabulary is lowercased for matching, so a correction comes back lowercase. Substituting
-    it verbatim would quietly rewrite "Бумаго офисная" as "бумага офисная" in the user's own
-    search box — a visible change they did not ask for on a word that was not the typo.
-    """
-    if sample.isupper() and len(sample) > 1:
-        return replacement.upper()
-    if sample[:1].isupper():
-        return replacement[:1].upper() + replacement[1:]
-    return replacement
-
-
-def _replace_token(text: str, token: str, replacement: str) -> str:
-    """Case-insensitively replace whole occurrences of ``token``, keeping everything else."""
-    pattern = re.compile(rf"(?<![0-9a-zа-яё]){re.escape(token)}(?![0-9a-zа-яё])", re.IGNORECASE)
-    return pattern.sub(lambda match: _match_case(match.group(0), replacement), text)

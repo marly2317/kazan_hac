@@ -17,6 +17,7 @@ from apps.autofill.application.use_cases.analyze_description import (
 )
 from apps.autofill.domain.entities import PositionCandidate
 from apps.autofill.domain.enums import IssueKind, MatchState
+from apps.autofill.domain.query import SplitQuery
 from apps.ktru.domain.entities import Characteristic, PermittedValue, Unit
 from apps.ktru.domain.enums import CharacteristicType, ValueKind
 from apps.spellcheck.domain.correction import Correction
@@ -73,7 +74,7 @@ class FakeCatalog:
     def __init__(self, positions: dict[str, tuple[str, float, list[Characteristic]]]) -> None:
         self._positions = positions
 
-    def find_positions(self, text: str, *, limit: int) -> list[PositionCandidate]:
+    def find_positions(self, query: SplitQuery, *, limit: int) -> list[PositionCandidate]:
         return sorted(
             (
                 PositionCandidate(code=code, name=name, okpd2_code="00", score=score)

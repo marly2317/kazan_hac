@@ -64,6 +64,21 @@ def trigrams(word: str) -> set[str]:
     return {padded[index : index + 3] for index in range(len(padded) - 2)}
 
 
+#: Characters compared when matching one word against another by its stem.
+#:
+#: Russian inflects the ending: the description says «шкаф», the characteristic is named
+#: «Высота шкафа», and «высота» appears as «высоту», «высотой». A prefix of five characters
+#: makes those the same word without a morphological analyser — which, for matching against a
+#: fixed reference, would be a heavy dependency bought for nothing. Five is long enough that
+#: «шкаф» and «шкала» stay apart.
+STEM_LENGTH = 5
+
+
+def stem(word: str) -> str:
+    """The comparable core of a word. See :data:`STEM_LENGTH`."""
+    return word.casefold()[:STEM_LENGTH]
+
+
 #: Shortest shared opening that counts as the same stem.
 #:
 #: Three would let «шкаф» and «шкала» agree. Four keeps them apart while still catching every

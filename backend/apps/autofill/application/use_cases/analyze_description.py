@@ -19,7 +19,13 @@ from apps.autofill.application.extraction import (
     stem,
     unit_is_compatible,
 )
-from apps.autofill.application.ports import KtruCatalog, QueryCorrector, UnitNormalizer
+from apps.autofill.application.ports import (
+    CatalogNarrowing,
+    KtruCatalog,
+    Lexicon,
+    QueryCorrector,
+    UnitNormalizer,
+)
 from apps.autofill.domain.entities import (
     Analysis,
     ExtractedCharacteristic,
@@ -34,6 +40,7 @@ from apps.autofill.domain.matching import (
     name_coverage,
     name_overlap,
 )
+from apps.autofill.domain.query import SplitQuery, split
 from apps.ktru.domain.entities import Characteristic
 
 #: Any run of letters — position names are split on this to find the product's own words.
@@ -49,6 +56,13 @@ SHOWN_CANDIDATES = 10
 #: Label of the step that drops positions the description does not name. Named here because
 #: the abstention branch keeps exactly this step and the initial search, and nothing else.
 NAMED_STEP = "Соответствие наименованию"
+
+#: Подпись шага, на котором описание разделяется на наименование и характеристики.
+#:
+#: Это первый шаг сужения и единственный, который ничего не отбрасывает, — но показывать его
+#: нужно: дальше весь поиск идёт по называющей части, и пользователь вправе видеть, что
+#: сервис счёл названием товара, а что его описанием.
+SPLIT_STEP = "Разделение описания"
 
 #: How many "add this next" prompts to offer.
 MAX_NEXT_STEPS = 3
@@ -75,10 +89,20 @@ class AnalyzeDescription:
         catalog: KtruCatalog,
         corrector: QueryCorrector,
         normalize_unit: UnitNormalizer,
+        lexicon: Lexicon | None = None,
+        narrowing: CatalogNarrowing | None = None,
     ) -> None:
         self._catalog = catalog
         self._corrector = corrector
         self._normalize_unit = normalize_unit
+        # Без словаря описание не разделяется, и поиск идёт по тексту целиком — прежнее
+        # поведение. Нужно это тестам: разделение проверяется своими тестами на своих
+        # словарях, а сто девяносто тестов сужения не должны зависеть от содержимого
+        # справочника.
+        self._lexicon = lexicon
+        # Сужение средствами движка — возможность, а не обязанность: на Postgres его нет, и
+        # тогда сужение делает перебор ниже. См. порт `CatalogNarrowing`.
+        self._narrowing = narrowing
 
     def execute(self, data: AnalyzeDescriptionInput) -> Analysis:
         correction = (
@@ -102,15 +126,31 @@ class AnalyzeDescription:
                 total_candidates=0,
             )
 
-        candidates = self._catalog.find_positions(text, limit=CANDIDATE_POOL)
-        steps = [
+        # Описание разделяется на называющую часть и описывающую, и позиции ищутся **первой**.
+        # До разделения в поиск по наименованиям уходило описание целиком: слова «48» и
+        # «размер» участвовали в сравнении с наименованиями позиций, хотя в наименованиях их
+        # не бывает — они не помогали найти куртку, а размывали оценку.
+        query = _split(text, self._lexicon)
+
+        candidates = self._catalog.find_positions(query, limit=CANDIDATE_POOL)
+        steps = []
+        if query.is_split:
+            steps.append(
+                NarrowingStep(
+                    label=SPLIT_STEP,
+                    detail=f"наименование: «{query.name}» · характеристики: «{query.attributes}»",
+                    before=0,
+                    after=0,
+                )
+            )
+        steps.append(
             NarrowingStep(
                 label="Поиск по наименованию",
-                detail=f"«{text}»",
+                detail=f"«{query.name}»",
                 before=0,
                 after=len(candidates),
             )
-        ]
+        )
         if not candidates:
             return Analysis(
                 original=correction.original,
@@ -123,8 +163,67 @@ class AnalyzeDescription:
                 total_candidates=0,
             )
 
-        by_code = self._catalog.characteristics_for([c.code for c in candidates])
-        pool = [c for c in candidates if c.code in by_code] or candidates
+        # Насколько каждое найденное наименование **названо** описанием. Считается здесь, до
+        # всего остального, потому что это и есть решение о наименовании.
+        candidates = [
+            replace(
+                candidate,
+                name_overlap=name_overlap(text, candidate.name),
+                name_coverage=name_coverage(text, candidate.name),
+            )
+            for candidate in candidates
+        ]
+
+        # Наименование определяется **первым**, и только потом характеристики.
+        #
+        # Порядок не ради скорости. `NAME_OVERLAP_FLOOR` и так запрещает отвечать позицией,
+        # которую описание не называет, — то есть решение о наименовании логически
+        # предшествует всему остальному уже сейчас. Применять его последним значило бы
+        # распознавать характеристики по пулу из трёхсот позиций, а потом выбрасывать
+        # распознанное вместе с позициями: «Высота изножья (от спального места): 150 мм» для
+        # отвёртки — не частичный успех, а уверенное утверждение о кровати, которой
+        # пользователь не называл. Теперь оно просто не вычисляется.
+        #
+        # Выигрывает и распознавание. `_attribute` перебирает характеристики кандидатов, и на
+        # трёхстах позициях единица сужает лишь до «всего, что измеряется в миллиметрах» —
+        # для шкафа это высота, ширина, глубина и ещё дюжина. На разрешённом наименовании
+        # словарь характеристик — десятки, и число почти всегда достаётся одной.
+        #
+        # Разрешается **группа одноимённых позиций**, а не одна. КТРУ держит двенадцать
+        # позиций «Молоток» и три «Куртка зимняя из кожи», различающихся только
+        # характеристиками: сузить дальше наименованием нечем, и дальше действительно дело за
+        # характеристиками.
+        named = [c for c in candidates if c.name_overlap >= NAME_OVERLAP_FLOOR]
+
+        if not named:
+            # Воздержание — здесь и сразу, до распознавания. Ближайшие промахи называются
+            # промахами; больше о них сказать нечего, и советовать по ним нечего. Уцелел сам
+            # поиск: сколько наименований просмотрено и что ни одно из них описание не назвало.
+            issues.append(_no_match(text, candidates))
+            candidates.sort(key=lambda candidate: (-candidate.rank, candidate.code))
+            return Analysis(
+                original=correction.original,
+                corrected=text,
+                characteristics=[],
+                issues=issues,
+                steps=steps,
+                candidates=candidates[:SHOWN_CANDIDATES],
+                next_steps=[],
+                total_candidates=len(candidates),
+            )
+
+        if len(named) < len(candidates):
+            steps.append(
+                NarrowingStep(
+                    label=NAMED_STEP,
+                    detail="отброшены позиции, которые описание не называет",
+                    before=len(candidates),
+                    after=len(named),
+                )
+            )
+
+        by_code = self._catalog.characteristics_for([c.code for c in named])
+        pool = [c for c in named if c.code in by_code] or named
 
         # Слова, которыми называется сам товар. Они не могут служить подсказкой к тому, какой
         # характеристике принадлежит число: в наименованиях характеристик молотка слово
@@ -135,99 +234,31 @@ class AnalyzeDescription:
 
         extracted, numbers, attributed = self._extract(text, by_code, product_stems)
 
-        # Each recognised characteristic is a filter, applied in turn so the elimination is
-        # visible rather than happening all at once.
-        supports: Counter[str] = Counter()
-        for item in extracted:
-            before = len(pool)
-            kept = []
-            for candidate in pool:
-                verdict = _verdict(by_code.get(candidate.code, []), item)
-                if verdict is CONTRADICTS:
-                    continue
-                if verdict is SUPPORTS:
-                    supports[candidate.code] += 1
-                kept.append(candidate)
-
-            # A filter that empties the set is reported but not applied: leaving the user with
-            # nothing is worse than leaving them with a choice.
-            if kept:
-                pool = kept
-            steps.append(
-                NarrowingStep(
-                    label=item.name,
-                    detail=f"{item.value} {item.unit}".strip(),
-                    before=before,
-                    after=len(pool) if kept else before,
-                )
+        if self._narrowing is not None and extracted:
+            pool, by_code, narrowed_steps, supports = self._narrow_in_engine(
+                query, extracted, pool, by_code
             )
+            steps.extend(narrowed_steps)
+        else:
+            pool, narrowed_steps, supports = _narrow_by_hand(pool, by_code, extracted)
+            steps.extend(narrowed_steps)
 
         # Support is *added* to the name score rather than ranked ahead of it — see
         # `PositionCandidate.rank`. Ordering by support first let a position that happens to
         # declare «Сезонность» outrank one whose name is the description word for word; one
         # matched characteristic is weaker evidence than a name that scores four times higher.
         #
-        # The two measures are attached to the candidate here, not recomputed later, so the
-        # order the user sees and the confidence the state is decided by are the same numbers.
-        pool = [
-            replace(
-                candidate,
-                support=supports[candidate.code],
-                name_overlap=name_overlap(text, candidate.name),
-                name_coverage=name_coverage(text, candidate.name),
-            )
-            for candidate in pool
-        ]
-
-        # Positions the description does not name at all are dropped outright, not merely
-        # ranked below. Trigram similarity happily returns «Пиджак мужской» for «костюм
-        # рабочий мужской» — the two share «мужской» — and a candidate list containing things
-        # the user plainly did not ask for is worse than a shorter one, because the user has
-        # to rule them out by hand.
-        #
-        # Unless that empties the pool: then the near misses are all there is, and they are
-        # kept so the abstention can name them. See `_no_match`.
-        named = [c for c in pool if c.name_overlap >= NAME_OVERLAP_FLOOR]
-        if named and len(named) < len(pool):
-            steps.append(
-                NarrowingStep(
-                    label=NAMED_STEP,
-                    detail="отброшены позиции, которые описание не называет",
-                    before=len(pool),
-                    after=len(named),
-                )
-            )
-            pool = named
+        # Совпадение с наименованием здесь уже посчитано — до сужения, вместе с решением о
+        # наименовании, — поэтому добавляется только поддержка. Так порядок, который видит
+        # пользователь, и уверенность, по которой решается состояние, остаются одними и теми
+        # же числами.
+        pool = [replace(candidate, support=supports[candidate.code]) for candidate in pool]
 
         pool.sort(key=lambda candidate: (-candidate.rank, candidate.code))
 
         issues.extend(
             self._value_issues(numbers, extracted, attributed, by_code, pool, product_stems)
         )
-
-        # Below the confidence floor nothing further is worth saying: the missing-required list
-        # and the "add this next" prompts would both be computed from a position the user never
-        # asked about, and dressing a bad match up with advice about it is what made the wrong
-        # answer look considered. The near misses are offered instead, as near misses.
-        if pool[0].name_overlap < NAME_OVERLAP_FLOOR:
-            issues.append(_no_match(text, pool))
-            # The extracted characteristics go too, and so do the steps that applied them.
-            # Every one of them was attributed by looking at the candidate positions — and
-            # those are the positions just judged not to be the product. Reporting
-            # «Высота изножья (от спального места): 150 мм» for a screwdriver is not partial
-            # progress, it is a confident statement about a bed the user never mentioned.
-            # What survives is the search itself: how many names were looked at, and that
-            # none of them was named by the description.
-            return Analysis(
-                original=correction.original,
-                corrected=text,
-                characteristics=[],
-                issues=[issue for issue in issues if issue.kind is not IssueKind.OUT_OF_RANGE],
-                steps=[step for step in steps if step.before == 0 or step.label == NAMED_STEP],
-                candidates=pool[:SHOWN_CANDIDATES],
-                next_steps=[],
-                total_candidates=len(pool),
-            )
 
         issues.extend(self._missing_required(by_code, pool, extracted))
 
@@ -241,6 +272,67 @@ class AnalyzeDescription:
             next_steps=self._next_steps(by_code, pool, extracted),
             total_candidates=len(pool),
         )
+
+    def _narrow_in_engine(
+        self,
+        query: SplitQuery,
+        extracted: list[ExtractedCharacteristic],
+        pool: list[PositionCandidate],
+        by_code: dict[str, list[Characteristic]],
+    ) -> tuple[
+        list[PositionCandidate],
+        dict[str, list[Characteristic]],
+        list[NarrowingStep],
+        Counter[str],
+    ]:
+        """Сужение одним запросом к движку — по всему индексу, а не по отобранному пулу.
+
+        Разница с перебором не в правиле, а в охвате. Перебор мог отбросить только то, что уже
+        попало в пул по наименованию, поэтому позиция, чьё наименование оказалось на 301-м
+        месте, не восстанавливалась никакими совпавшими характеристиками. Условие в запросе
+        этого ограничения не имеет.
+
+        Счётчики «было — стало» приходят из `track_total_hits`, то есть это точное число
+        позиций, а не длина обрезанной страницы.
+        """
+        narrowed = self._narrowing.narrow(
+            query,
+            extracted,
+            # Сужение идёт внутри разрешённого наименования: позиция, которую описание не
+            # называет, уже отвергнута порогом, и искать её характеристиками значило бы
+            # искать среди отвергнутого.
+            within=[candidate.code for candidate in pool],
+            limit=CANDIDATE_POOL,
+        )
+        if not narrowed.candidates:
+            # Пустой результат не применяется — ровно по той же причине, по которой его не
+            # применяет перебор: оставить пользователя ни с чем хуже, чем оставить ему выбор.
+            return pool, by_code, [], Counter()
+
+        # Совпадение с наименованием посчитано до сужения; движок о нём не знает и вернул бы
+        # нули. Поэтому от его ответа берётся только то, что он действительно решал, — остался
+        # ли кандидат и чем он подтверждён, — а меры наименования переносятся из прежних.
+        known = {candidate.code: candidate for candidate in pool}
+        narrowed_pool = [
+            replace(known[candidate.code], support=candidate.support)
+            for candidate in narrowed.candidates
+            if candidate.code in known
+        ]
+        if not narrowed_pool:
+            return pool, by_code, [], Counter()
+        pool = narrowed_pool
+
+        steps = [
+            NarrowingStep(
+                label=name,
+                detail=f"{item.value} {item.unit}".strip(),
+                before=before,
+                after=after,
+            )
+            for item, (name, before, after) in zip(extracted, narrowed.steps, strict=True)
+        ]
+        supports = Counter({candidate.code: candidate.support for candidate in pool})
+        return pool, by_code, steps, supports
 
     # --- extraction ---------------------------------------------------------------------
 
@@ -728,6 +820,58 @@ def _allowed(characteristic: Characteristic) -> list[str]:
 def _units_phrase(characteristic: Characteristic) -> str:
     names = [unit.name for unit in characteristic.units]
     return ", ".join(f"«{name}»" for name in names[:3]) or "безразмерных величинах"
+
+
+def _split(text: str, lexicon: Lexicon | None) -> SplitQuery:
+    """Разделить описание, либо оставить его одной частью, когда словаря нет.
+
+    Без словаря разделить нельзя: роль слова определяется тем, где оно встречается в
+    справочнике, и выдумывать её из текста значило бы угадывать. Поиск тогда идёт по описанию
+    целиком — прежнее поведение, хуже, но не неверное.
+    """
+    if lexicon is None:
+        return SplitQuery(full=text, name=text, attributes="")
+    return split(text, lexicon)
+
+
+def _narrow_by_hand(
+    pool: list[PositionCandidate],
+    by_code: dict[str, list[Characteristic]],
+    extracted: list[ExtractedCharacteristic],
+) -> tuple[list[PositionCandidate], list[NarrowingStep], Counter[str]]:
+    """Сужение перебором пула — путь без поискового движка.
+
+    Each recognised characteristic is a filter, applied in turn so the elimination is visible
+    rather than happening all at once.
+    """
+    steps: list[NarrowingStep] = []
+    supports: Counter[str] = Counter()
+
+    for item in extracted:
+        before = len(pool)
+        kept = []
+        for candidate in pool:
+            verdict = _verdict(by_code.get(candidate.code, []), item)
+            if verdict is CONTRADICTS:
+                continue
+            if verdict is SUPPORTS:
+                supports[candidate.code] += 1
+            kept.append(candidate)
+
+        # A filter that empties the set is reported but not applied: leaving the user with
+        # nothing is worse than leaving them with a choice.
+        if kept:
+            pool = kept
+        steps.append(
+            NarrowingStep(
+                label=item.name,
+                detail=f"{item.value} {item.unit}".strip(),
+                before=before,
+                after=len(pool) if kept else before,
+            )
+        )
+
+    return pool, steps, supports
 
 
 #: A position either backs up an extracted value, rules it out, or says nothing about it.

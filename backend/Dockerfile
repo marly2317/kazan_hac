@@ -28,7 +28,25 @@ RUN python -m pip install --upgrade pip \
       "gunicorn==26.2.0" \
       "whitenoise==6.12.0" \
       "symspellpy==6.10.0" \
-      "httpx==0.28.1"
+      "httpx==0.28.1" \
+      "opensearch-py==2.8.0"
+
+# Энкодер отдельным слоем, и `torch` — из индекса CPU-колёс. Обычный `pip install torch`
+# притащил бы сборку с CUDA: несколько гигабайт ради вычислений на GPU, которого на стенде
+# нет. Слой идёт после прикладных зависимостей, поэтому правка версии Django его не
+# пересобирает, а пересобирать его дороже всего остального в образе вместе.
+RUN python -m pip install --index-url https://download.pytorch.org/whl/cpu "torch==2.6.0" \
+ && python -m pip install "sentence-transformers==3.4.1"
+
+# Модель вшивается в образ, а не скачивается при первом запросе — почему, написано в самом
+# скрипте. rubert-tiny2: 29 млн параметров, 312 измерений, ~120 МБ — то самое «предпочтение
+# лёгким и быстрым» из условий хакатона, и на CPU это единицы миллисекунд на запрос.
+ARG EMBEDDING_MODEL=cointegrated/rubert-tiny2
+ENV EMBEDDING_MODEL_PATH=/opt/models/encoder
+COPY docker/fetch_encoder.py /tmp/fetch_encoder.py
+RUN python /tmp/fetch_encoder.py "$EMBEDDING_MODEL" "$EMBEDDING_MODEL_PATH" \
+ && rm /tmp/fetch_encoder.py \
+ && chmod -R a+rX /opt/models
 
 # Dev tooling, off by default. The production image stays free of a test runner and a linter;
 # the development stack turns this on so `pytest` and `ruff` can be run inside the same

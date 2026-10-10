@@ -188,6 +188,35 @@ SPECTACULAR_SETTINGS = {
     "ENUM_NAME_OVERRIDES": {"RoleEnum": "apps.users.domain.enums.ROLE_CHOICES"},
 }
 
+# --- поисковый движок ----------------------------------------------------------------------
+#
+# OpenSearch — **производный** индекс: источник истины остаётся в Postgres, а движок
+# перестраивается из него командой `manage.py index_ktru`. Отсюда два следствия, на которые
+# опирается весь код ниже: потеря индекса не теряет данных, а рассогласование лечится
+# переиндексацией, а не миграцией.
+#
+# Пустая строка выключает движок, и поиск возвращается на Postgres. Это не «аварийный режим»,
+# а то, чем пользуется `manage.py bench_retrieval`: сравнить два движка на одном стенде можно
+# только если оба доступны одновременно.
+OPENSEARCH_URL = env("OPENSEARCH_URL", default="").rstrip("/")
+# Префикс имён индексов. Отдельной переменной, потому что замер на другом наборе данных — это
+# другой индекс рядом с рабочим, а не второй кластер.
+OPENSEARCH_INDEX_PREFIX = env("OPENSEARCH_INDEX_PREFIX", default="ktru")
+# Короткий: движок стоит перед полем ввода, и запрос, не ответивший за пять секунд, уже
+# обошёлся дороже, чем стоит его результат.
+OPENSEARCH_TIMEOUT = env.float("OPENSEARCH_TIMEOUT", default=5.0)
+
+# --- энкодер для семантической части поиска ------------------------------------------------
+#
+# Путь к модели, вшитой в образ (см. `backend/Dockerfile`), а не имя на HuggingFace: сеть на
+# стенде не гарантирована, и загрузка при первом запросе — это отказ в самый неподходящий
+# момент.
+#
+# `EMBEDDING_ENABLED=0` оставляет поиск чисто лексическим. Это нужно затем же, зачем выключение
+# движка: вклад семантики в качество измеряется её выключением, а не рассуждением о нём.
+EMBEDDING_MODEL_PATH = env("EMBEDDING_MODEL_PATH", default="/opt/models/encoder")
+EMBEDDING_ENABLED = env.bool("EMBEDDING_ENABLED", default=True)
+
 # --- search and spelling correction --------------------------------------------------------
 # The spelling pipeline degrades on purpose: with no key the LLM stage is simply not added, and
 # correction falls back to the keyboard-layout and dictionary stages, which need nothing
