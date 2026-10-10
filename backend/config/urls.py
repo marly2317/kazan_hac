@@ -18,6 +18,7 @@ urlpatterns = [
     path(f"{API_V1}auth/", include("apps.users.presentation.urls")),
     path(f"{API_V1}catalog/", include("apps.catalog.presentation.urls")),
     path(f"{API_V1}autofill/", include("apps.autofill.presentation.urls")),
+    path(f"{API_V1}ste/", include("apps.ste.presentation.urls")),
     path(f"{API_V1}schema/", SpectacularAPIView.as_view(), name="schema"),
     path(
         f"{API_V1}docs/",

@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     "apps.catalog.apps.CatalogConfig",
     "apps.ktru.apps.KtruConfig",
     "apps.autofill.apps.AutofillConfig",
+    "apps.ste.apps.SteConfig",
 ]
 
 AUTH_USER_MODEL = "users.User"
@@ -61,6 +62,7 @@ MIGRATION_MODULES = {
     "catalog": "apps.catalog.infrastructure.migrations",
     "ktru": "apps.ktru.infrastructure.migrations",
     "autofill": "apps.autofill.infrastructure.migrations",
+    "ste": "apps.ste.infrastructure.migrations",
 }
 
 MIDDLEWARE = [

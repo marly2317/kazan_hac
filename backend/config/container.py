@@ -282,3 +282,28 @@ def record_reference_gaps() -> RecordReferenceGaps | None:
     if not settings.COLLECT_REFERENCE_GAPS:
         return None
     return RecordReferenceGaps(DjangoGapRecorder(), reference_vocabulary())
+
+
+# --- подбор КТРУ и автозаполнение СТЕ (apps/ste) --------------------------------------------
+
+
+@lru_cache(maxsize=1)
+def ste_pipeline():
+    """Пайплайн подбора КТРУ: компоненты процесса из `apps.ste.runtime` + сессии в Postgres.
+
+    Один на процесс: внутри только ссылки на долгоживущие компоненты (база знаний, индекс,
+    эмбеддер, LLM-клиент), а состояние запроса хранится в сессии, не в объекте.
+    """
+    from apps.ste import runtime
+    from apps.ste.application.pipeline import Deps, Pipeline
+    from apps.ste.infrastructure.session_store import DjangoSessionStore
+
+    return Pipeline(
+        Deps(
+            kb=runtime.knowledge_base(),
+            corrector=runtime.corrector(),
+            retriever=runtime.retriever(),
+            llm=runtime.llm_client(),
+            store=DjangoSessionStore(),
+        )
+    )

@@ -66,6 +66,7 @@ class SignalType(StrEnum):
     MISSING_REQUIRED = "MISSING_REQUIRED"  # обязательная не указана (после определения кода)
     NOT_FOUND = "NOT_FOUND"  # тип товара не определён
     QUOTE_NOT_FOUND = "QUOTE_NOT_FOUND"  # служебный: цитата модели не найдена в тексте
+    NOTICE = "NOTICE"  # служебное уведомление: LLM недоступна, подбор выполнен правилами
 
 
 class Severity(StrEnum):

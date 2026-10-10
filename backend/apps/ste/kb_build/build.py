@@ -123,9 +123,7 @@ def _family_chars(
         for spec in specs:
             allowed.extend(spec.allowed)
         signatures = {frozenset(value.key for value in spec.allowed) for spec in in_leaves}
-        differentiator = len(leaves) > 1 and (
-            len(in_leaves) < len(leaves) or len(signatures) > 1
-        )
+        differentiator = len(leaves) > 1 and (len(in_leaves) < len(leaves) or len(signatures) > 1)
         result[key] = FamilyChar(
             key=key,
             name=specs[0].name,
@@ -200,7 +198,9 @@ def build(positions: dict[str, RawPosition], scope: tuple[str, ...]) -> Knowledg
             )
         )
 
-    drafts.sort(key=lambda family: (_CATEGORY_ORDER.get(family.category, 9), family.okpd2, family.id))
+    drafts.sort(
+        key=lambda family: (_CATEGORY_ORDER.get(family.category, 9), family.okpd2, family.id)
+    )
     for index, family in enumerate(drafts, start=1):
         family.short_id = f"F{index:03d}"
 
