@@ -22,7 +22,7 @@ from apps.ste.domain.values import fold_text
 
 #: Лимиты короткой карточки: длиннее — список семейств перестаёт помещаться в промпт.
 SHORT_KINDS = 10
-SHORT_SYNONYMS = 6
+SHORT_SYNONYMS = 4
 SHORT_OKPD2_NAME = 60
 SHORT_VALUE = 40
 #: «Виды» в короткой карточке — не длиннее стольких символов, даже если их меньше 10.

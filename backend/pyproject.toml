@@ -18,8 +18,7 @@ dependencies = [
     "snowballstemmer==3.1.1",
     "jsonschema==4.26.0",
     "numpy==2.5.3",
-    # Энкодер для семантической части поиска. `torch` ставится из CPU-индекса (см. Dockerfile):
-    # колёса с CUDA — это несколько гигабайт ради вычислений, которых на стенде не будет.
+    # Эмбеддер Qwen3-Embedding-0.6B (apps/ste); `torch` ставится из CPU-индекса (см. Dockerfile).
     "sentence-transformers==6.1.0",
 ]
 

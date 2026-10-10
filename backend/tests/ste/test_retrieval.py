@@ -461,11 +461,13 @@ def test_short_cards_fit_llm1_prompt(real_kb):
     """
     cards = [C.short_card(family) for family in real_kb.selectable()]
     lengths = [len(card) for card in cards]
-    assert sum(lengths) < 60_000
+    # Весь список (режим full_list) — ~25 тыс. токенов при окне Gemma 4 в 262 тыс.
+    assert sum(lengths) < 80_000
     assert statistics.median(lengths) < 250 and max(lengths) < 520
     grinder = C.short_card(real_kb.families[GRINDER])
     assert grinder.startswith("[F")
-    assert "Шлифмашина | ОКПД2 28.24.11 Инструменты ручные электрические | виды:" in grinder
+    assert "Шлифмашина |" in grinder and "болгарка" in grinder
+    assert "ОКПД2 28.24.11 Инструменты ручные электрические | виды:" in grinder
     assert "Углошлифовальная машина" in grinder
 
 
