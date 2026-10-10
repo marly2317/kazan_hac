@@ -908,3 +908,12 @@ def test_hybrid_recall(hybrid):
 
 def test_hybrid_strong_is_precise(hybrid):
     _assert_strong_is_precise(hybrid)
+
+
+def test_same_model_ignores_folder_naming():
+    from apps.ste.application.retrieval import same_model
+
+    assert same_model("qwen3-emb-0.6b", "qwen3-embedding-0.6b")
+    assert same_model("Qwen/Qwen3-Embedding-0.6B", "qwen3-embedding-0.6b")
+    assert same_model("c" * 40, "qwen3-embedding-0.6b")  # снимок кэша HuggingFace
+    assert not same_model("qwen3-embedding-0.6b", "multilingual-e5-large")

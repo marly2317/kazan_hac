@@ -370,7 +370,7 @@
   "28.24.11.000-00000042",
   "28.24.20.000-00000001"
  ],
- "model": "qwen3-emb-0.6b",
+ "model": "qwen3-embedding-0.6b",
  "dim": 1024,
  "card_sha256": "a4ef3fca9c91b4b3c7a7eb6fd609891373bca7cd2e0314bcfd97044e832b90b4",
  "built_at": "2026-10-10T15:12:23+00:00",

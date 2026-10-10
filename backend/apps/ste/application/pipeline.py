@@ -446,6 +446,16 @@ class Pipeline:
         """Реранкер → (уверен: сразу) → LLM-1 по его топу; без LLM — по реранкеру/поиску."""
         start = time.perf_counter()
         ranked = self._rerank(state.text, hits)
+        if ranked is None and hits:
+            self._step(
+                state,
+                "Реранкер",
+                "Qwen3-Reranker-0.6B",
+                _ms(start),
+                "выключен (STE_RERANKER_ENABLED=0) — LLM-1 получает топ поиска целиком"
+                if self.deps.reranker is None
+                else "не сработал (нет весов или ошибка, см. лог) — LLM-1 получает топ поиска",
+            )
         if ranked is not None:
             state.timings["rerank"] = _ms(start)
             device = getattr(self.deps.reranker, "device", None)

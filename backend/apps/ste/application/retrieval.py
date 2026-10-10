@@ -280,7 +280,7 @@ class Retriever:
 
     def _attach_vectors(self, vectors) -> None:
         model = getattr(self.embedder, "model_name", "")
-        if vectors.model and model and vectors.model != model:
+        if vectors.model and model and not same_model(vectors.model, model):
             logger.warning(
                 "Векторы посчитаны моделью %s, а эмбеддер — %s: поиск только лексический",
                 vectors.model,
@@ -586,6 +586,23 @@ class Retriever:
         if entry is not None and entry[0] is hit:
             return entry[1]
         return None
+
+
+def _model_id(name: str) -> str:
+    folded = re.sub(r"[^0-9a-z.]", "", name.casefold().rsplit("/", 1)[-1])
+    return folded.replace("embedding", "emb")
+
+
+def same_model(a: str, b: str) -> bool:
+    """Одна ли модель: имена каталогов бывают разными для одних весов.
+
+    «qwen3-emb-0.6b» (локальная копия), «qwen3-embedding-0.6b» (образ) и
+    «Qwen/Qwen3-Embedding-0.6B» — одна модель. Каталог-снимок кэша HuggingFace назван хэшем —
+    по нему модель не определить, такое имя не сравнивается.
+    """
+    if any(re.fullmatch(r"[0-9a-f]{40}", name) for name in (a, b)):
+        return True
+    return _model_id(a) == _model_id(b)
 
 
 def _lexically_unsure(bm25: np.ndarray, order: list[int]) -> bool:
