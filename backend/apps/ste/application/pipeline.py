@@ -379,7 +379,7 @@ class Pipeline:
         except Exception as error:  # noqa: BLE001
             logger.warning("Поиск отказал: %s", error)
             return []
-        families = len(getattr(retriever, "families", ()) or ())
+        families = len(self.kb.selectable())
         self._step(
             state,
             "Лексический поиск BM25",
