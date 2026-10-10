@@ -31,7 +31,7 @@ def load_cases(path: Path = CASES) -> list[dict]:
 def build_pipeline(use_llm: bool):
     from apps.ste.application.pipeline import Deps, Pipeline
     from apps.ste.infrastructure.session_store import MemorySessionStore
-    from apps.ste.runtime import corrector, knowledge_base, llm_client, retriever
+    from apps.ste.runtime import corrector, knowledge_base, llm_client, reranker, retriever
 
     return Pipeline(
         Deps(
@@ -39,6 +39,7 @@ def build_pipeline(use_llm: bool):
             corrector=corrector(),
             retriever=retriever(),
             llm=llm_client() if use_llm else None,
+            reranker=reranker(),
             store=MemorySessionStore(),
         )
     )

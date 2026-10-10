@@ -48,6 +48,15 @@ def retriever():
 
 
 @lru_cache(maxsize=1)
+def reranker():
+    if not config.RERANKER_ENABLED:
+        return None
+    from apps.ste.infrastructure.reranker import get_reranker
+
+    return get_reranker()
+
+
+@lru_cache(maxsize=1)
 def llm_client():
     if not config.LLM_ENABLED:
         return None
@@ -70,5 +79,5 @@ def extra_unifier():
 
 def reset() -> None:
     """Сбросить всё после пересборки базы знаний (новые синонимы, векторы)."""
-    for factory in (knowledge_base, corrector, retriever, llm_client, extra_unifier):
+    for factory in (knowledge_base, corrector, retriever, reranker, llm_client, extra_unifier):
         factory.cache_clear()

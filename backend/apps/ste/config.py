@@ -78,6 +78,18 @@ EMBEDDER_QUERY_INSTRUCTION = (
 #: Исправление опечаток и раскладки по словарю КТРУ перед разбором.
 TYPOS_ENABLED = _flag("STE_TYPOS_ENABLED", True)
 
+# --- реранкер (Qwen3-Reranker-0.6B) --------------------------------------------------------
+
+RERANKER_PATH = _env("STE_RERANKER_PATH", "/opt/models/qwen3-reranker-0.6b")
+RERANKER_ENABLED = _flag("STE_RERANKER_ENABLED", True)
+#: Сколько кандидатов поиска переупорядочивать.
+RERANK_TOP = int(_float("STE_RERANK_TOP", 15))
+#: Реранкер уверен — LLM-1 не нужна: P(yes) лидера ≥ этого и отрыв от второго ≥ RERANK_MARGIN.
+RERANK_CONFIDENT = _float("STE_RERANK_CONFIDENT", 0.85)
+RERANK_MARGIN = _float("STE_RERANK_MARGIN", 0.3)
+#: Сколько лучших после реранкера получает LLM-1, когда реранкер не уверен.
+RERANK_TO_LLM = int(_float("STE_RERANK_TO_LLM", 5))
+
 # --- пороги решения (архитектура §4.1; подбираются на тест-кейсах) ---------------------------
 
 #: LLM-1: одно семейство, если top1 ≥ этого и отрыв от top2 ≥ FAMILY_MARGIN.

@@ -173,6 +173,7 @@ def ste_pipeline():
             corrector=runtime.corrector(),
             retriever=runtime.retriever(),
             llm=runtime.llm_client(),
+            reranker=runtime.reranker(),
             store=DjangoSessionStore(),
         )
     )

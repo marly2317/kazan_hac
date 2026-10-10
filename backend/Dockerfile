@@ -45,7 +45,11 @@ RUN python -m pip install --index-url https://download.pytorch.org/whl/cpu "torc
 ARG EMBEDDING_MODEL=Qwen/Qwen3-Embedding-0.6B
 ENV STE_EMBEDDER_PATH=/opt/models/qwen3-embedding-0.6b
 COPY docker/fetch_encoder.py /tmp/fetch_encoder.py
+# Реранкер Qwen3-Reranker-0.6B: переупорядочивает топ поиска перед LLM (кросс-энкодер).
+ARG RERANKER_MODEL=Qwen/Qwen3-Reranker-0.6B
+ENV STE_RERANKER_PATH=/opt/models/qwen3-reranker-0.6b
 RUN python /tmp/fetch_encoder.py "$EMBEDDING_MODEL" "$STE_EMBEDDER_PATH" \
+ && python -c "from huggingface_hub import snapshot_download as d; d('$RERANKER_MODEL', local_dir='$STE_RERANKER_PATH', allow_patterns=['*.json','*.safetensors','*.txt'])" \
  && rm /tmp/fetch_encoder.py \
  && chmod -R a+rX /opt/models
 

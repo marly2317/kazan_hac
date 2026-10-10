@@ -109,6 +109,7 @@ class Deps:
     retriever: Any  # .search(text, k) -> list[FamilyHit]; .confidence(hits) -> dict
     llm: Any | None  # LlmClient | None
     store: Any  # SessionStore
+    reranker: Any | None = None  # Reranker | None
 
 
 class PipelineError(Exception):
@@ -294,8 +295,62 @@ class Pipeline:
     def _by_short(self, short_id: str) -> Family | None:
         return self.kb.by_short_id(short_id)
 
+    def _rerank(self, text: str, hits: list[FamilyHit]) -> list[tuple[FamilyHit, float]] | None:
+        """Qwen3-Reranker по топу поиска: (кандидат, P(yes)) по убыванию; ``None`` — нет модели."""
+        reranker = self.deps.reranker
+        if reranker is None or not hits:
+            return None
+        from apps.ste.domain.cards import short_card
+
+        top = hits[: config.RERANK_TOP]
+        documents = [short_card(self.kb.families[hit.family_id]).split("] ", 1)[-1] for hit in top]
+        try:
+            scores = reranker.score(text, documents)
+        except Exception as error:  # noqa: BLE001
+            logger.warning("Реранкер отказал: %s", error)
+            return None
+        if scores is None:
+            return None
+        return sorted(zip(top, scores, strict=True), key=lambda item: -item[1])
+
     def _select_family(self, state: State, hits: list[FamilyHit]) -> None:
-        """LLM-1 + правила решения §4.1; без LLM — запасной путь по поиску."""
+        """Реранкер → (уверен: сразу) → LLM-1 по его топу; без LLM — по реранкеру/поиску."""
+        ranked = self._rerank(state.text, hits)
+        if ranked is not None:
+            state.preview = [
+                {**self._hit_json(hit), "score": round(prob, 4)} for hit, prob in ranked[:5]
+            ]
+            (top, p1) = ranked[0]
+            p2 = ranked[1][1] if len(ranked) > 1 else 0.0
+            if p1 >= config.RERANK_CONFIDENT and p1 - p2 >= config.RERANK_MARGIN:
+                state.candidates = [asdict(FamilyChoice(top.family_id, p1, "реранкер уверен"))]
+                state.selection = {"not_found": False, "mode": "reranker", "reason": "реранкер"}
+                return
+            if self.deps.llm is not None:
+                try:
+                    self._select_with_llm(state, [hit for hit, _ in ranked[: config.RERANK_TO_LLM]])
+                    self._cross_check(state, ranked)
+                    return
+                except Exception as error:  # noqa: BLE001
+                    logger.warning("LLM-1 недоступна: %s", error)
+                    state.llm_note = _llm_note(error)
+            if p1 < 0.05:
+                state.selection = {
+                    "not_found": True,
+                    "mode": "reranker",
+                    "reason": "ни одно семейство КТРУ не подходит по реранкеру",
+                }
+            elif p1 >= 0.5 and p1 - p2 >= 0.2:
+                state.candidates = [asdict(FamilyChoice(top.family_id, p1, "реранкер"))]
+                state.selection = {"not_found": False, "mode": "reranker", "reason": "реранкер"}
+            else:
+                state.candidates = [
+                    asdict(FamilyChoice(hit.family_id, prob, "реранкер"))
+                    for hit, prob in ranked[:3]
+                ]
+                state.selection = {"not_found": False, "mode": "reranker", "reason": "реранкер"}
+            return
+
         fast = self._fast_path(hits, state.text)
         if fast is not None:
             state.candidates = [asdict(fast)]
@@ -329,6 +384,18 @@ class Pipeline:
                 "mode": "fallback",
                 "reason": "Поиск не нашёл похожих семейств КТРУ",
             }
+
+    def _cross_check(self, state: State, ranked: list[tuple[FamilyHit, float]]) -> None:
+        """Реранкер уверенно за другое семейство, чем LLM-1, — показать оба (вопрос пользователю).
+
+        Две независимые модели, расходящиеся в выборе, — сигнал не выдавать код молча.
+        """
+        if state.selection.get("not_found") or not state.candidates:
+            return
+        top, p1 = ranked[0]
+        chosen = {choice["family_id"] for choice in state.candidates}
+        if p1 >= 0.7 and top.family_id not in chosen:
+            state.candidates.append(asdict(FamilyChoice(top.family_id, p1, "реранкер")))
 
     def _confidence(self, hits: list[FamilyHit], text: str | None = None) -> dict:
         try:
