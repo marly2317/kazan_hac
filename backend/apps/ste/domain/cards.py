@@ -140,14 +140,35 @@ def _okpd2_short(family: Family) -> str:
 
 
 def _short_kinds(family: Family) -> list[str]:
-    result: list[str] = []
-    used = 0
-    for value in kinds(family, SHORT_KINDS):
-        value = _clip(value, SHORT_VALUE)
-        if result and used + len(value) + 2 > SHORT_KINDS_CHARS:
-            break
-        result.append(value)
-        used += len(value) + 2
+    """«Виды» для LLM-1: значения **каждой** различающей неизменяемой характеристики.
+
+    Первые десять значений подряд показывали бы только одну характеристику: у «Одежды
+    специальной для защиты от пониженных температур» это виды одежды, а то, что прямо
+    называет семейство («3 (IV климатический пояс)»), в карточку не попадало — и LLM-1
+    отдавала «куртку для IV климатического пояса» обычным зимним курткам.
+    """
+    groups = [
+        (char.name, char.text_values())
+        for char in family.chars.values()
+        # Одно значение на всё семейство ничего не различает — в «виды» не идёт.
+        if 1 in char.kinds and char.differentiator and len(char.text_values()) >= 2
+    ]
+    if len(groups) <= 1:
+        result: list[str] = []
+        used = 0
+        for value in kinds(family, SHORT_KINDS):
+            value = _clip(value, SHORT_VALUE)
+            if result and used + len(value) + 2 > SHORT_KINDS_CHARS:
+                break
+            result.append(value)
+            used += len(value) + 2
+        return result
+    per_group = max(2, SHORT_KINDS // len(groups))
+    result = []
+    for name, values in groups[:4]:
+        shown = [_clip(value, SHORT_VALUE) for value in values[:per_group]]
+        more = "…" if len(values) > per_group else ""
+        result.append(f"{name}: " + ", ".join(shown) + more)
     return result
 
 

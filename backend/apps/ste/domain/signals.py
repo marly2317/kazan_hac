@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import difflib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from apps.ste.domain import units as U
 from apps.ste.domain.model import (
@@ -81,6 +81,12 @@ def value_signals(spec, ev: ExtractedValue, nv: NormalizedValue, family_id: str 
         quote=ev.quote,
         family_id=family_id,
     )
+    if ev.status == Status.CONTRADICTION and spec.is_numeric and ev.unit:
+        # Модель пометила «противоречием» число с единицей не той размерности: точнее сказать,
+        # что именно не так, — проверка единицы ниже.
+        unit, char_unit = U.parse_unit(ev.unit), spec.unit
+        if unit is not None and char_unit is not None and unit.dimension != char_unit.dimension:
+            ev = replace(ev, status=Status.SPECIFIED)
     if ev.status == Status.CONTRADICTION:
         out.append(
             Signal(
