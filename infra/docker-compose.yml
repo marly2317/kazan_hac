@@ -33,6 +33,9 @@ services:
     build:
       context: ../backend
       dockerfile: Dockerfile
+      args:
+        # Реранкер выключен — его веса (~1,2 ГБ) в образ не кладутся.
+        WITH_RERANKER: ${STE_RERANKER_ENABLED:-0}
     restart: unless-stopped
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.prod
