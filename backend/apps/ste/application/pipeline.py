@@ -732,6 +732,8 @@ class Pipeline:
                 _ms(start),
                 f"найдено значений: {len(extracted)}",
             )
+        if extra:
+            extra = self._dedupe_extra(state, family, extracted, extra)
         state.extracted[family_id] = {key: asdict(ev) for key, ev in extracted.items()}
         state.extra[family_id] = extra
         state.duplicates[family_id] = duplicates
@@ -742,6 +744,59 @@ class Pipeline:
                 continue
             values[key] = asdict(normalize_value(spec, ev))
         state.values[family_id] = values
+
+    def _dedupe_extra(
+        self, state: State, family: Family, extracted: dict, extra: list[dict]
+    ) -> list[dict]:
+        """Убрать из дополнительных то, что уже есть в основных, бренде или модели."""
+        from apps.ste.application.llm_steps import _to_values
+        from apps.ste.domain.extra_filter import (
+            BRAND_NAMES,
+            MODEL_NAMES,
+            _value_text,
+            dedupe_extra,
+        )
+        from apps.ste.domain.values import fold_text
+
+        for item in extra:  # «Бренд: RAGE», а бренд модель не вынесла — вынести
+            name = fold_text(str(item.get("name") or "")).strip()
+            if name in BRAND_NAMES and not state.brand:
+                state.brand = _value_text(item.get("value")) or None
+            elif name in MODEL_NAMES and not state.model:
+                state.model = _value_text(item.get("value")) or None
+        filled = {
+            key: (_value_text(ev.value), ev.quote)
+            for key, ev in extracted.items()
+            if ev.status != Status.ABSENT and ev.value not in (None, "", [])
+        }
+        keep, move, dropped = dedupe_extra(
+            extra,
+            {key: char.name for key, char in family.chars.items()},
+            filled,
+            state.brand,
+            state.model,
+        )
+        for key, item in move:
+            char = family.chars[key]
+            values = _to_values(
+                char, {**item, "status": Status.SPECIFIED.value}, state.text, Source.TEXT
+            )
+            if values:
+                extracted[key] = values[0]
+        if move or dropped:
+            notes = [f"«{item.get('name')}» → «{family.chars[key].name}»" for key, item in move]
+            notes += [
+                f"«{item.get('name')}: {_value_text(item.get('value'))}» — {why}"
+                for item, why in dropped
+            ]
+            self._step(
+                state,
+                "Дубли в дополнительных характеристиках",
+                "правила (без нейросети)",
+                0,
+                "; ".join(notes),
+            )
+        return keep
 
     @staticmethod
     def _unify_extra(items: list[dict]) -> list[dict]:

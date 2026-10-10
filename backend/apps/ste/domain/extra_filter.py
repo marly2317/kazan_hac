@@ -229,3 +229,122 @@ def keep_extra(item: dict) -> dict | None:
 
 def filter_extra(items: list[dict]) -> list[dict]:
     return [kept for item in items if (kept := keep_extra(item)) is not None]
+
+
+# --- дубли основных характеристик, бренда и модели ---------------------------------------------
+
+#: Названия, под которыми модель кладёт в extra бренд или модель.
+BRAND_NAMES = frozenset(
+    fold_text(name)
+    for name in ("бренд", "производитель", "марка", "торговая марка", "изготовитель", "фирма")
+)
+MODEL_NAMES = frozenset(fold_text(name) for name in ("модель", "артикул", "серия"))
+#: Похожесть названий, при которой это одна характеристика (как в словаре названий).
+NAME_MATCH = 0.86
+#: Короткие значения («да», «нет», «1») совпадают у разных характеристик случайно.
+_TRIVIAL_VALUES = frozenset({"да", "нет", "есть"})
+#: Слова названия, которые сами по себе характеристику не определяют.
+_GENERIC_NAME_STEMS = frozenset({"тип", "вид", "форма", "налич", "колич", "общий", "основ"})
+
+
+def _stems(text: str) -> set[str]:
+    return {fold_text(word)[:5] for word in _WORD.findall(text) if len(word) >= 3}
+
+
+def _value_text(value) -> str:
+    if isinstance(value, list | tuple):
+        return ", ".join(str(part) for part in value)
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return "" if value is None else str(value)
+
+
+def same_name(extra_name: str, char_name: str) -> bool:
+    """Одна ли это характеристика: «Цвет» и «Цвет изделия», «Размер» и «Размер одежды».
+
+    Совпадение целиком, высокая похожесть написания или все слова одного названия есть в
+    другом (по основам: «размера» = «размер»).
+    """
+    import difflib
+
+    a, b = fold_text(extra_name).strip(), fold_text(char_name).strip()
+    if not a or not b:
+        return False
+    if a == b or difflib.SequenceMatcher(None, a, b).ratio() >= NAME_MATCH:
+        return True
+    sa, sb = _stems(a), _stems(b)
+    small = min(sa, sb, key=len)
+    if not small or small <= _GENERIC_NAME_STEMS:
+        return False  # «Тип», «Вид» — к любой «Тип …» не приклеивать
+    return sa <= sb or sb <= sa
+
+
+def _inside(quote: str | None, other: str | None) -> bool:
+    """Цитата extra целиком внутри цитаты основной: то же место текста, та же информация.
+
+    Обратное — не дубль: «Молоток - гвоздодер 560 г» содержит «гвоздодер» основной, но масса
+    в нём — другая информация.
+    """
+    if not quote or not other:
+        return False
+    a, b = fold_text(quote).strip(), fold_text(other).strip()
+    return len(a) >= 3 and a in b
+
+
+def dedupe_extra(
+    items: list[dict],
+    chars: dict[str, str],
+    filled: dict[str, tuple[str, str | None]],
+    brand: str | None,
+    model: str | None,
+) -> tuple[list[dict], list[tuple[str, dict]], list[tuple[dict, str]]]:
+    """Убрать из extra то, что уже есть в основных характеристиках, бренде или модели.
+
+    ``chars`` — ключ → название характеристики семейства; ``filled`` — ключ → (значение,
+    цитата) заполненных. Возвращает ``(оставить, перенести в основные, отброшено)``:
+
+    * название как у основной, и она заполнена — дубль, отбрасывается;
+    * название как у одной пустой основной — значение переносится туда (там его проверит КТРУ);
+      подходят несколько пустых — неясно куда, остаётся в extra;
+    * цитата или значение совпадают с заполненной основной — дубль под другим именем;
+    * значение равно бренду или модели, или это поле «Бренд»/«Модель» — дубль отдельных полей.
+    """
+    keep: list[dict] = []
+    move: list[tuple[str, dict]] = []
+    dropped: list[tuple[dict, str]] = []
+    marks = {fold_text(mark) for mark in (brand, model) if mark}
+    for item in items:
+        name = str(item.get("name") or "")
+        value = _value_text(item.get("value"))
+        folded_name, folded_value = fold_text(name).strip(), fold_text(value).strip()
+        if folded_value and folded_value in marks:
+            dropped.append((item, "совпадает с брендом или моделью"))
+            continue
+        if (folded_name in BRAND_NAMES and brand) or (folded_name in MODEL_NAMES and model):
+            dropped.append((item, "бренд и модель — отдельными полями"))
+            continue
+        same = [key for key, char_name in chars.items() if same_name(name, char_name)]
+        if any(key in filled for key in same):
+            dropped.append((item, "уже есть в основных характеристиках"))
+            continue
+        if len(same) == 1:
+            move.append((same[0], item))
+            continue
+        twin = next(
+            (
+                key
+                for key, (filled_value, filled_quote) in filled.items()
+                if _inside(item.get("quote"), filled_quote)
+                or (
+                    folded_value not in _TRIVIAL_VALUES
+                    and len(folded_value) >= 3
+                    and folded_value == fold_text(filled_value).strip()
+                )
+            ),
+            None,
+        )
+        if twin is not None:
+            dropped.append((item, f"то же значение, что у «{chars.get(twin, twin)}»"))
+            continue
+        keep.append(item)
+    return keep, move, dropped
