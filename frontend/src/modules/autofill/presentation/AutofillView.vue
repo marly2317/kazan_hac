@@ -90,6 +90,21 @@ function copy(code: string): void {
         </p>
       </section>
 
+      <section v-if="result.trace" class="ste-block ste-trace">
+        <h3>Как отработала система</h3>
+        <ul>
+          <li>Тип товара определил: <b>{{ result.trace.family_by }}</b></li>
+          <li>
+            LLM-1 (выбор семейства): {{ result.trace.llm1_called ? `вызвана, ${result.timings_ms.llm1} мс` : 'не вызывалась на этом шаге' }}
+          </li>
+          <li>
+            LLM-2 (извлечение характеристик): {{ result.trace.llm2_called ? `вызвана, ${result.timings_ms.llm2} мс` : 'не вызывалась на этом шаге' }}
+          </li>
+          <li>Реранкер: {{ result.trace.reranker ? 'включён' : 'выключен' }} · LLM: {{ result.trace.llm_configured ? 'настроена' : 'не настроена (нет ключа)' }}</li>
+          <li v-if="result.trace.llm_error" class="error-text">{{ result.trace.llm_error }}</li>
+        </ul>
+      </section>
+
       <section v-if="result.text.fixes.length" class="ste-block">
         <h3>Исправлено в описании</h3>
         <p v-for="fix in result.text.fixes" :key="fix.start + fix.original">
@@ -263,4 +278,5 @@ function copy(code: string): void {
 .ste-card tr.missing td:first-child { color: var(--red); }
 .ste-leaves { padding-left: 18px; }
 .ste-timings { font-size: 0.8em; }
+.ste-trace ul { margin: 0; padding-left: 18px; }
 </style>

@@ -651,6 +651,22 @@ class Pipeline:
         state.timings["total"] = _ms(total_start)
         session_id = self.deps.store.save(session_id, state.to_json())
         result["session_id"] = session_id
+        modes = {
+            "fast": "поиск (однозначное совпадение, без LLM)",
+            "reranker": "реранкер Qwen3-Reranker",
+            "llm": "LLM-1 (Gemma) из кандидатов поиска/реранкера",
+            "fallback": "правила по поиску (LLM недоступна)",
+            "user": "выбрано пользователем",
+            "empty": "—",
+        }
+        result["trace"] = {
+            "family_by": modes.get(state.selection.get("mode", ""), state.selection.get("mode")),
+            "llm1_called": state.timings.get("llm1", 0) > 50,
+            "llm2_called": state.timings.get("llm2", 0) > 50,
+            "reranker": self.deps.reranker is not None,
+            "llm_configured": self.deps.llm is not None,
+            "llm_error": state.llm_note,
+        }
         result["timings_ms"] = {
             key: state.timings.get(key, 0)
             for key in ("typos", "preview", "llm1", "llm2", "rules", "total")
@@ -691,9 +707,10 @@ def join_compound_lengths(text: str) -> str:
 
 def _llm_note(error: Exception) -> str:
     name = type(error).__name__
+    detail = f" ({name}: {str(error)[:160]})"
     if "Quota" in name:
-        return "Лимит запросов к языковой модели исчерпан — подбор выполнен правилами."
-    return "Языковая модель недоступна — подбор выполнен правилами."
+        return "Лимит запросов к языковой модели исчерпан — подбор выполнен правилами." + detail
+    return "Языковая модель недоступна — подбор выполнен правилами." + detail
 
 
 __all__ = ["Deps", "Pipeline", "PipelineError", "State"]

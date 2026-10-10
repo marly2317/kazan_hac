@@ -84,6 +84,14 @@ export type Result = {
   to_fill_optional: FillItem[];
   signals: Signal[];
   timings_ms: Record<string, number>;
+  trace?: {
+    family_by: string;
+    llm1_called: boolean;
+    llm2_called: boolean;
+    reranker: boolean;
+    llm_configured: boolean;
+    llm_error: string | null;
+  };
 };
 
 export const UNKNOWN = '__unknown__';

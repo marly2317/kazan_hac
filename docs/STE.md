@@ -164,7 +164,7 @@ cp infra/.env.example infra/.env
 
 * бесплатно: `STE_LLM_MODEL=google/gemma-4-26b-a4b-it:free`, `STE_LLM_STRUCTURED=prompt`;
 * платно (быстрее, ~$0,0003 за описание): `STE_LLM_MODEL=google/gemma-4-26b-a4b-it`,
-  `STE_LLM_STRUCTURED=json_schema`, `STE_LLM_FALLBACK_MODELS=`, `STE_LLM_MIN_INTERVAL=0`.
+  `STE_LLM_STRUCTURED=prompt`, `STE_LLM_FALLBACK_MODELS=`, `STE_LLM_MIN_INTERVAL=0`.
 
 ```bash
 cd infra && docker compose up --build      # первая сборка ~10–15 мин: torch + модель 1,2 ГБ

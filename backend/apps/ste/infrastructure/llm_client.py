@@ -187,8 +187,77 @@ _FENCE = re.compile(r"```[ \t]*(?:json|JSON|javascript)?[ \t]*\n?(.*?)```", re.D
 _TRAILING_COMMA = re.compile(r",\s*([}\]])")
 
 
+def _close_truncated(chunk: str) -> dict | None:
+    """Достроить обрезанный JSON: модель упёрлась в лимит токенов (часто — зациклившись на
+    пробелах после правильного ответа). Без этого извлекался бы вложенный объект одной
+    характеристики, и весь ответ молча терялся."""
+    start = chunk.find("{")
+    if start < 0:
+        return None
+    text = chunk[start:].rstrip()
+    stack: list[str] = []
+    in_string = escaped = False
+    last_safe = 0
+    for index, char in enumerate(text):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char in "{[":
+            stack.append("}" if char == "{" else "]")
+        elif char in "}]":
+            if stack:
+                stack.pop()
+            last_safe = index + 1
+            if not stack:
+                break
+        elif char == ",":
+            last_safe = index
+    candidate = text[:last_safe]
+    closers = []
+    depth: list[str] = []
+    in_string = escaped = False
+    for char in candidate:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char in "{[":
+            depth.append("}" if char == "{" else "]")
+        elif char in "}]" and depth:
+            depth.pop()
+    closers = "".join(reversed(depth))
+    try:
+        value = json.loads(candidate + closers)
+    except json.JSONDecodeError:
+        return None
+    return value if isinstance(value, dict) else None
+
+
 def _first_object(chunk: str) -> dict | None:
     decoder = json.JSONDecoder()
+    first = chunk.find("{")
+    if first >= 0:
+        try:
+            value, _end = decoder.raw_decode(chunk, first)
+            if isinstance(value, dict):
+                return value
+        except json.JSONDecodeError:
+            repaired = _close_truncated(chunk)
+            if repaired is not None:
+                return repaired
     for match in re.finditer(r"\{", chunk):
         try:
             value, _end = decoder.raw_decode(chunk, match.start())
