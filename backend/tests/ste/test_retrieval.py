@@ -568,7 +568,8 @@ def test_vector_finds_what_bm25_cannot():
     top = hits[0]
     assert top.family_id == "F-GRIND" and top.bm25_rank is None and top.vector_rank == 1
     assert top.cosine == pytest.approx(0.995, abs=0.01)
-    assert top.score == pytest.approx(0.5)  # первое место только в одном из двух ранжирований
+    # BM25 не нашёл ничего: вектор — единственный голос, и его первое место — это 1.
+    assert top.score == pytest.approx(1.0)
 
 
 def test_rrf_agreement_scores_one_and_ranks_are_consistent():

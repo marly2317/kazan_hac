@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import logging
 import math
+import os
 import re
 import threading
 import time
@@ -48,6 +49,22 @@ logger = logging.getLogger(__name__)
 BM25_K1 = 1.5
 BM25_B = 0.75
 RRF_K = 60
+
+#: Вес голоса вектора в RRF (у BM25 — 1). Подобран замером: на реальных наименованиях СТЕ
+#: из выгрузок (46 шт.) верное семейство первым — BM25 80%, вектор 85%, слияние с весом 0,6 —
+#: 89%; на тест-кейсах — 88%; в топ-30 для LLM-1 — 98–99%. Больший вес тянет к «похожим»
+#: соседним семействам (1,6 → 83%), меньший теряет выигрыш вектора на живых названиях.
+VECTOR_WEIGHT = float(os.environ.get("STE_VECTOR_WEIGHT", "0.6"))
+
+#: always — вектор запроса считается всегда (машина с GPU: единицы мс); auto — только когда
+#: лексика не уверена (CPU: ~0,7 с на запрос); off — только BM25.
+VECTOR_MODE = os.environ.get("STE_VECTOR_MODE", "always")
+
+#: Вектор запроса стоит сотни миллисекунд на CPU, поэтому в режиме ``auto`` он считается,
+#: только когда лексика не уверена: BM25 нашёл меньше AUTO_MIN_HITS семейств или лидер
+#: опережает второе место меньше чем в AUTO_RATIO раз.
+AUTO_MIN_HITS = 3
+AUTO_RATIO = 1.3
 #: Основа слова обрезается до стольких букв: русская словоизменительная и словообразовательная
 #: морфология (прилагательное ↔ существительное, уменьшительные) стеммером не снимается.
 PREFIX = 7
@@ -362,7 +379,12 @@ class Retriever:
         return ~self._generic
 
     def search(
-        self, text: str, k: int = 30, include_generic: bool = False, *, vectors: bool = True
+        self,
+        text: str,
+        k: int = 30,
+        include_generic: bool = False,
+        *,
+        vectors: bool | str | None = None,
     ) -> list[FamilyHit]:
         """Топ-``k`` семейств для текста; пустой список — в тексте нет слов о типе товара.
 
@@ -372,7 +394,12 @@ class Retriever:
         return self.search_timed(text, k, include_generic, vectors=vectors)[0]
 
     def search_timed(
-        self, text: str, k: int = 30, include_generic: bool = False, *, vectors: bool = True
+        self,
+        text: str,
+        k: int = 30,
+        include_generic: bool = False,
+        *,
+        vectors: bool | str | None = None,
     ) -> tuple[list[FamilyHit], dict[str, float]]:
         """То же, что :meth:`search`, плюс время шагов в мс: ``clean, bm25, vector, fuse``."""
         timings: dict[str, float] = {}
@@ -392,6 +419,10 @@ class Retriever:
         timings["bm25"] = _ms(step)
 
         step = time.perf_counter()
+        if vectors is None:
+            vectors = {"always": True, "off": False}.get(VECTOR_MODE, "auto")
+        if vectors == "auto":
+            vectors = _lexically_unsure(bm25, bm25_order)
         cosines = self.cosines(query) if vectors else None
         vector_order: list[int] = []
         if cosines is not None:
@@ -429,11 +460,13 @@ class Retriever:
         bm25_rank = {index: rank for rank, index in enumerate(bm25_order, start=1)}
         vector_rank = {index: rank for rank, index in enumerate(vector_order, start=1)}
         fused: dict[int, float] = {}
-        for ranks in (bm25_rank, vector_rank):
+        # Без лексики вектор — единственный голос и весит полностью.
+        weight = VECTOR_WEIGHT if bm25_order else 1.0
+        for ranks, share in ((bm25_rank, 1.0), (vector_rank, weight)):
             for index, rank in ranks.items():
-                fused[index] = fused.get(index, 0.0) + 1.0 / (self.rrf_k + rank)
-        sources = 2 if cosines is not None else 1
-        best = sources / (self.rrf_k + 1)
+                fused[index] = fused.get(index, 0.0) + share / (self.rrf_k + rank)
+        best = (1.0 if bm25_order else 0.0) + (weight if cosines is not None else 0.0)
+        best = max(best, 1e-9) / (self.rrf_k + 1)
 
         def order(index: int) -> tuple:
             cosine = cosines[index] if cosines is not None else 0.0
@@ -553,6 +586,14 @@ class Retriever:
         if entry is not None and entry[0] is hit:
             return entry[1]
         return None
+
+
+def _lexically_unsure(bm25: np.ndarray, order: list[int]) -> bool:
+    """Нужен ли вектор: BM25 нашёл мало или лидер почти не отрывается от второго места."""
+    if len(order) < AUTO_MIN_HITS:
+        return True
+    top, second = float(bm25[order[0]]), float(bm25[order[1]])
+    return second > 0 and top < AUTO_RATIO * second
 
 
 def _ms(started: float) -> float:
