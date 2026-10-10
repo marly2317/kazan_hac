@@ -484,7 +484,7 @@ class Pipeline:
                 state.candidates = [asdict(FamilyChoice(top.family_id, p1, "реранкер уверен"))]
                 state.selection = {"not_found": False, "mode": "reranker", "reason": "реранкер"}
                 return
-            if self.deps.llm is not None:
+            if self._llm1_enabled(state):
                 try:
                     self._select_with_llm(state, [hit for hit, _ in ranked[: config.RERANK_TO_LLM]])
                     self._cross_check(state, ranked)
@@ -515,7 +515,7 @@ class Pipeline:
             state.selection = {"not_found": False, "mode": "fast", "reason": fast.reason}
             return
 
-        if self.deps.llm is not None:
+        if self._llm1_enabled(state):
             try:
                 self._select_with_llm(state, hits)
                 return
@@ -535,7 +535,7 @@ class Pipeline:
                 ]
             else:
                 state.candidates = [
-                    asdict(FamilyChoice(hit.family_id, 0.5, "похоже по поиску")) for hit in hits[:3]
+                    asdict(FamilyChoice(hit.family_id, 0.5, "похоже по поиску")) for hit in hits[:5]
                 ]
             state.selection = {"not_found": False, "mode": "fallback", "reason": "по поиску"}
         else:
@@ -544,6 +544,21 @@ class Pipeline:
                 "mode": "fallback",
                 "reason": "Поиск не нашёл похожих семейств КТРУ",
             }
+
+    def _llm1_enabled(self, state: State) -> bool:
+        if self.deps.llm is None:
+            return False
+        if not config.LLM_FAMILY_SELECT:
+            self._step(
+                state,
+                "LLM-1 · выбор семейства",
+                None,
+                0,
+                "выключена (STE_LLM_FAMILY_SELECT=0): семейство — по поиску, при "
+                "неоднозначности — вопрос",
+            )
+            return False
+        return True
 
     def _cross_check(self, state: State, ranked: list[tuple[FamilyHit, float]]) -> None:
         """Реранкер уверенно за другое семейство, чем LLM-1, — показать оба (вопрос пользователю).
@@ -821,7 +836,7 @@ class Pipeline:
             "fast": "поиск (однозначное совпадение, без LLM)",
             "reranker": "реранкер Qwen3-Reranker",
             "llm": "LLM-1 (Gemma) из кандидатов поиска/реранкера",
-            "fallback": "правила по поиску (LLM недоступна)",
+            "fallback": "поиск (BM25 + векторы) и правила, без LLM",
             "user": "выбрано пользователем",
             "empty": "—",
         }

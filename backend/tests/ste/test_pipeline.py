@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from apps.ste import config
 from apps.ste.application import llm_steps
 from apps.ste.application.llm_steps import ExtractionResult, SelectionResult
 from apps.ste.application.pipeline import UNKNOWN_ANSWER, Deps, Pipeline, PipelineError
@@ -87,6 +88,8 @@ def _ev(key, value, unit=None, quote=None):
 
 @pytest.fixture
 def fake_llm(monkeypatch, kb):
+    # Путь с LLM-1 (выбор семейства моделью) — по умолчанию выключен, здесь проверяется он.
+    monkeypatch.setattr(config, "LLM_FAMILY_SELECT", True)
     calls = {"select": 0, "extract": 0}
 
     def select(client, text, cards, generic, allowed):

@@ -45,7 +45,7 @@ SCOPE_OKPD2 = tuple(
 
 LLM_BASE_URL = _env("STE_LLM_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
 LLM_API_KEY = _env("STE_LLM_API_KEY")
-LLM_MODEL = _env("STE_LLM_MODEL", "google/gemma-4-26b-a4b-it")
+LLM_MODEL = _env("STE_LLM_MODEL", "qwen/qwen3.6-35b-a3b")
 LLM_FALLBACK_MODELS = tuple(
     item.strip() for item in _env("STE_LLM_FALLBACK_MODELS", "").split(",") if item.strip()
 )
@@ -79,7 +79,7 @@ TYPOS_ENABLED = _flag("STE_TYPOS_ENABLED", True)
 # --- реранкер (Qwen3-Reranker-0.6B) --------------------------------------------------------
 
 RERANKER_PATH = _env("STE_RERANKER_PATH", "/opt/models/qwen3-reranker-0.6b")
-RERANKER_ENABLED = _flag("STE_RERANKER_ENABLED", True)
+RERANKER_ENABLED = _flag("STE_RERANKER_ENABLED", False)
 #: Сколько кандидатов поиска переупорядочивать.
 RERANK_TOP = int(_float("STE_RERANK_TOP", 15))
 #: Реранкер уверен — LLM-1 не нужна: P(yes) лидера ≥ этого и отрыв от второго ≥ RERANK_MARGIN.
@@ -95,6 +95,10 @@ FAMILY_CONFIDENT = _float("STE_FAMILY_CONFIDENT", 0.75)
 FAMILY_MARGIN = _float("STE_FAMILY_MARGIN", 0.2)
 #: Кандидаты LLM-1 со score ниже — отбрасываются; если не осталось никого — «не найдено».
 FAMILY_MIN = _float("STE_FAMILY_MIN", 0.4)
+#: LLM-1 — выбор семейства языковой моделью из кандидатов поиска. Выключено: LLM работает
+#: только на извлечении характеристик, семейство выбирают поиск (и реранкер, если включён),
+#: а неоднозначность снимается вопросом «уточните тип товара».
+LLM_FAMILY_SELECT = _flag("STE_LLM_FAMILY_SELECT", False)
 #: Режим LLM-1: ``top_k`` — подаётся топ-K из поиска; ``full_list`` — весь список семейств.
 FAMILY_SELECT_MODE = _env("STE_FAMILY_SELECT_MODE", "top_k")
 FAMILY_TOP_K = int(_float("STE_FAMILY_TOP_K", 30))
