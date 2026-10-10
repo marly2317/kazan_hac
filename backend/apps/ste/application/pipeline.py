@@ -154,8 +154,9 @@ class Pipeline:
         state.timings["llm1"] = _ms(start)
 
         start = time.perf_counter()
-        for choice in state.candidates[:MAX_FAMILIES]:
-            self._extract(state, choice["family_id"])
+        self._extract_all(
+            state, [choice["family_id"] for choice in state.candidates[:MAX_FAMILIES]]
+        )
         state.timings["llm2"] = _ms(start)
 
         return self._finish(state, session_id, total)
@@ -199,14 +200,23 @@ class Pipeline:
         if char_key not in family.chars:
             raise PipelineError(f"У семейства «{family.name}» нет характеристики «{char_key}».")
         ev = None
+        llm_answered = False
         if self.deps.llm is not None:
             try:
                 from apps.ste.application.llm_steps import extract_one
 
                 ev = extract_one(self.deps.llm, text, family, char_key)
+                llm_answered = True
             except Exception as error:  # noqa: BLE001 — деградация вместо отказа
                 logger.warning("mini-LLM-2 недоступна: %s", error)
                 state.llm_note = _llm_note(error)
+        if ev is None and llm_answered:
+            # Модель прочитала ответ и значения в нём не нашла («не знаю», «любой») — это
+            # пропуск вопроса, а не значение: иначе текст ответа стал бы «недопустимым
+            # значением» в списке ошибок.
+            if char_key not in state.skipped:
+                state.skipped.append(char_key)
+            return self._finish(state, session_id, total)
         if ev is None:
             ev = self._rule_value(family.chars[char_key], text, Source.ANSWER)
         ev.source = Source.ANSWER
@@ -395,30 +405,61 @@ class Pipeline:
         state.candidates = [asdict(choice) for choice in kept]
         state.selection = {"not_found": False, "mode": "llm", "reason": top.reason}
 
-    def _extract(self, state: State, family_id: str) -> None:
+    def _extract_all(self, state: State, family_ids: list[str]) -> None:
+        """LLM-2 по каждому семейству-кандидату — параллельно (архитектура §4.3).
+
+        Клиент потокобезопасен; вызовы разносит его ограничитель частоты. Состояние меняется
+        только в основном потоке, после того как все ответы получены.
+        """
+        if len(family_ids) <= 1 or self.deps.llm is None:
+            for family_id in family_ids:
+                self._extract(state, family_id)
+            return
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=len(family_ids)) as pool:
+            fetched = list(pool.map(lambda fid: self._call_llm2(state.text, fid), family_ids))
+        for family_id, outcome in zip(family_ids, fetched, strict=True):
+            self._extract(state, family_id, prefetched=outcome)
+
+    def _call_llm2(self, text: str, family_id: str):
+        from apps.ste.application.llm_steps import extract_values
+
+        family = self.kb.families[family_id]
+        if not family.chars:
+            return None
+        try:
+            return extract_values(self.deps.llm, text, family)
+        except Exception as error:  # noqa: BLE001
+            return error
+
+    def _extract(self, state: State, family_id: str, prefetched=None) -> None:
         """LLM-2 по схеме семейства (§4.3); без LLM — правила по словарю семейства."""
         family = self.kb.families[family_id]
         extracted: dict[str, ExtractedValue] = {}
         extra: list[dict] = []
+        duplicates: list[dict] = []
         if self.deps.llm is not None and family.chars:
-            try:
-                from apps.ste.application.llm_steps import extract_values
-
-                result = extract_values(self.deps.llm, state.text, family)
+            result = (
+                prefetched if prefetched is not None else self._call_llm2(state.text, family_id)
+            )
+            if isinstance(result, Exception):
+                logger.warning("LLM-2 недоступна: %s", result)
+                state.llm_note = _llm_note(result)
+            elif result is not None:
                 extracted = dict(result.values)
-                extra = list(result.extra or [])
+                extra = self._unify_extra(list(result.extra or []))
                 state.brand = state.brand or result.brand
                 state.model = state.model or result.model
-            except Exception as error:  # noqa: BLE001
-                logger.warning("LLM-2 недоступна: %s", error)
-                state.llm_note = _llm_note(error)
-                extracted = {}
+                for items in (getattr(result, "duplicates", None) or {}).values():
+                    duplicates += [asdict(item) for item in items]
         if not extracted and family.chars:
             from apps.ste.application.rule_extract import extract_by_rules
 
             extracted = extract_by_rules(state.text, family)
         state.extracted[family_id] = {key: asdict(ev) for key, ev in extracted.items()}
         state.extra[family_id] = extra
+        state.duplicates[family_id] = duplicates
         values = {}
         for key, ev in extracted.items():
             spec = family.chars.get(key)
@@ -426,6 +467,17 @@ class Pipeline:
                 continue
             values[key] = asdict(normalize_value(spec, ev))
         state.values[family_id] = values
+
+    @staticmethod
+    def _unify_extra(items: list[dict]) -> list[dict]:
+        """Дополнительные характеристики — к словарным названиям и единицам ОКЕИ (§4.7)."""
+        from apps.ste.runtime import extra_unifier
+
+        try:
+            return extra_unifier().unify_all(items)
+        except Exception as error:  # noqa: BLE001 — словарь необязателен
+            logger.warning("Унификация дополнительных характеристик не удалась: %s", error)
+            return items
 
     def _store_value(
         self, state: State, family: Family, ev: ExtractedValue, force_confirmed: bool = False

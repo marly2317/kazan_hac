@@ -56,7 +56,19 @@ def llm_client():
     return get_llm_client()
 
 
+@lru_cache(maxsize=1)
+def extra_unifier():
+    """Словарь типовых характеристик портала (лист 2 выгрузок) для дополнительных."""
+    import json
+
+    from apps.ste.domain.extra import ExtraUnifier
+
+    path = config.KB_DIR / "dict_char_names.json"
+    dictionary = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
+    return ExtraUnifier(dictionary)
+
+
 def reset() -> None:
     """Сбросить всё после пересборки базы знаний (новые синонимы, векторы)."""
-    for factory in (knowledge_base, corrector, retriever, llm_client):
+    for factory in (knowledge_base, corrector, retriever, llm_client, extra_unifier):
         factory.cache_clear()

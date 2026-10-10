@@ -55,7 +55,13 @@ LLM_FALLBACK_MODELS = tuple(
 #: ``json_schema`` — ``response_format`` с JSON-схемой (ограниченное декодирование).
 #: Бесплатный провайдер OpenRouter схему игнорирует (проверено), поэтому по умолчанию ``prompt``.
 LLM_STRUCTURED = _env("STE_LLM_STRUCTURED", "prompt")
-LLM_TIMEOUT = _float("STE_LLM_TIMEOUT", 60.0)
+LLM_TIMEOUT = _float("STE_LLM_TIMEOUT", 25.0)
+#: Сколько вызовов можно сделать подряд без паузы: LLM-1 и LLM-2 идут друг за другом.
+LLM_BURST = int(_float("STE_LLM_BURST", 3))
+#: Необязательные заголовки OpenRouter (атрибуция приложения).
+LLM_REFERER = _env("STE_LLM_REFERER")
+#: Только ASCII: значение уходит в HTTP-заголовок.
+LLM_TITLE = _env("STE_LLM_TITLE", "Tender Hack Kazan - KTRU autofill")
 #: Минимальный интервал между вызовами, секунды: бесплатный тариф — 20 запросов в минуту.
 LLM_MIN_INTERVAL = _float("STE_LLM_MIN_INTERVAL", 3.1)
 LLM_CACHE_DIR = Path(_env("STE_LLM_CACHE_DIR", str(BACKEND_DIR / "var" / "llm_cache")))

@@ -15,6 +15,7 @@ from apps.ste.domain import signals as S
 from apps.ste.domain.card import build_card
 from apps.ste.domain.kb import Family, KnowledgeBase, Leaf
 from apps.ste.domain.model import (
+    Confidence,
     Severity,
     Signal,
     SignalType,
@@ -28,6 +29,8 @@ if TYPE_CHECKING:
 
 #: Сколько оставшихся листьев показывать списком.
 SHOWN_LEAVES = 10
+
+_STRONG = {Confidence.CONFIDENT, Confidence.CONFIRMED}
 
 
 def _leaf(item) -> Leaf:
@@ -198,7 +201,8 @@ class ResultBuilder:
 
     def _question(self, result: dict, signals: list[Signal], focus, remaining: list[Leaf]) -> dict:
         family, score, reason, values, leaves, outcome = focus
-        known = set(values)
+        # Спрашиваем и о том, что распознано неуверенно: слабое значение подтверждается ответом.
+        known = {key for key, nv in values.items() if nv.confidence in _STRONG}
         question = Q.choose_question(remaining, known, set(self.state.skipped))
         if question is None:
             question = Q.leaf_question(remaining)
@@ -211,8 +215,8 @@ class ResultBuilder:
             family, None, values, None, self._extra(family.id), self.state.brand, self.state.model
         )
         result["message"] = (
-            f"Тип товара: «{family.name}». Осталось {len(remaining)} конечных позиций КТРУ — "
-            f"{question.title.rstrip('.')}."
+            f"Тип товара: «{family.name}». В КТРУ {Q.remaining_phrase(len(remaining))} — "
+            f"{question.title[:1].lower()}{question.title[1:].rstrip('.')}."
         )
         result["signals"] = self._signals_json(signals)
         return result
@@ -355,8 +359,7 @@ class ResultBuilder:
         ]
 
     def _funnel(self, family: Family, leaves: list[Leaf], outcome, leaf: Leaf | None) -> list[dict]:
-        okpd_prefix = family.okpd2[:8]
-        in_group = sum(1 for item in self.kb.selectable() if item.okpd2.startswith(okpd_prefix))
+        in_group = sum(1 for item in self.kb.selectable() if item.okpd2 == family.okpd2)
         funnel = [
             self._catalog_step(),
             {
