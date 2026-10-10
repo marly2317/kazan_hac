@@ -296,7 +296,7 @@ class Pipeline:
 
     def _select_family(self, state: State, hits: list[FamilyHit]) -> None:
         """LLM-1 + правила решения §4.1; без LLM — запасной путь по поиску."""
-        fast = self._fast_path(hits)
+        fast = self._fast_path(hits, state.text)
         if fast is not None:
             state.candidates = [asdict(fast)]
             state.selection = {"not_found": False, "mode": "fast", "reason": fast.reason}
@@ -313,7 +313,7 @@ class Pipeline:
         # Без LLM: уверенный лидер поиска — берём; иначе — вопрос «уточните вид товара».
         if hits:
             top = hits[0]
-            features = self._confidence(hits)
+            features = self._confidence(hits, state.text)
             if features.get("strong"):
                 state.candidates = [
                     asdict(FamilyChoice(top.family_id, 0.8, "лучшее совпадение поиска"))
@@ -330,13 +330,15 @@ class Pipeline:
                 "reason": "Поиск не нашёл похожих семейств КТРУ",
             }
 
-    def _confidence(self, hits: list[FamilyHit]) -> dict:
+    def _confidence(self, hits: list[FamilyHit], text: str | None = None) -> dict:
         try:
+            return dict(self.deps.retriever.confidence(hits, text))
+        except TypeError:
             return dict(self.deps.retriever.confidence(hits))
         except Exception:  # noqa: BLE001
             return {}
 
-    def _fast_path(self, hits: list[FamilyHit]) -> FamilyChoice | None:
+    def _fast_path(self, hits: list[FamilyHit], text: str) -> FamilyChoice | None:
         """Быстрый путь без LLM-1: поиск однозначен (архитектура — наше улучшение §4.1).
 
         Включается только при согласии лексики и вектора и заметном отрыве: экономит вызов LLM
@@ -344,7 +346,7 @@ class Pipeline:
         """
         if not config_fast_path() or not hits:
             return None
-        features = self._confidence(hits)
+        features = self._confidence(hits, text)
         if features.get("strong"):
             top = hits[0]
             return FamilyChoice(top.family_id, 0.9, "однозначное совпадение по поиску")
