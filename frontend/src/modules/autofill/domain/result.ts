@@ -89,6 +89,7 @@ export type Result = {
     llm1_called: boolean;
     llm2_called: boolean;
     reranker: boolean;
+    reranker_ms?: number | null;
     llm_configured: boolean;
     llm_error: string | null;
   };

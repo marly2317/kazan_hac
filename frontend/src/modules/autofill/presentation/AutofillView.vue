@@ -100,7 +100,7 @@ function copy(code: string): void {
           <li>
             LLM-2 (извлечение характеристик): {{ result.trace.llm2_called ? `вызвана, ${result.timings_ms.llm2} мс` : 'не вызывалась на этом шаге' }}
           </li>
-          <li>Реранкер: {{ result.trace.reranker ? 'включён' : 'выключен' }} · LLM: {{ result.trace.llm_configured ? 'настроена' : 'не настроена (нет ключа)' }}</li>
+          <li>Реранкер: {{ result.trace.reranker ? (result.timings_ms.rerank ? `включён, ${result.timings_ms.rerank} мс` : 'включён (на этом шаге не нужен)') : 'выключен' }} · LLM: {{ result.trace.llm_configured ? 'настроена' : 'не настроена (нет ключа)' }}</li>
           <li v-if="result.trace.llm_error" class="error-text">{{ result.trace.llm_error }}</li>
         </ul>
       </section>
@@ -241,7 +241,7 @@ function copy(code: string): void {
       </section>
 
       <p class="muted ste-timings">
-        Время: {{ result.timings_ms.total }} мс (LLM-1 {{ result.timings_ms.llm1 }} мс, LLM-2
+        Время: {{ result.timings_ms.total }} мс (реранкер {{ result.timings_ms.rerank ?? 0 }} мс, LLM-1 {{ result.timings_ms.llm1 }} мс, LLM-2
         {{ result.timings_ms.llm2 }} мс)
       </p>
     </template>

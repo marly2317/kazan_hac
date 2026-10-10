@@ -153,9 +153,7 @@ class Pipeline:
         state.preview = [self._hit_json(hit) for hit in hits[:5]]
         state.timings["preview"] = _ms(start)
 
-        start = time.perf_counter()
         self._select_family(state, hits)
-        state.timings["llm1"] = _ms(start)
 
         start = time.perf_counter()
         self._extract_all(
@@ -329,8 +327,10 @@ class Pipeline:
 
     def _select_family(self, state: State, hits: list[FamilyHit]) -> None:
         """Реранкер → (уверен: сразу) → LLM-1 по его топу; без LLM — по реранкеру/поиску."""
+        start = time.perf_counter()
         ranked = self._rerank(state.text, hits)
         if ranked is not None:
+            state.timings["rerank"] = _ms(start)
             state.preview = [
                 {**self._hit_json(hit), "score": round(prob, 4)} for hit, prob in ranked[:5]
             ]
@@ -436,6 +436,14 @@ class Pipeline:
         return None
 
     def _select_with_llm(self, state: State, hits: list[FamilyHit]) -> None:
+        """LLM-1 с замером: в трассировке время LLM-1 — только когда она правда вызывалась."""
+        start = time.perf_counter()
+        try:
+            self._llm_family_choice(state, hits)
+        finally:
+            state.timings["llm1"] = _ms(start)
+
+    def _llm_family_choice(self, state: State, hits: list[FamilyHit]) -> None:
         from apps.ste.application.llm_steps import select_family
         from apps.ste.domain.cards import generic_card, short_card
 
@@ -661,7 +669,8 @@ class Pipeline:
         }
         result["trace"] = {
             "family_by": modes.get(state.selection.get("mode", ""), state.selection.get("mode")),
-            "llm1_called": state.timings.get("llm1", 0) > 50,
+            "llm1_called": "llm1" in state.timings,
+            "reranker_ms": state.timings.get("rerank"),
             "llm2_called": state.timings.get("llm2", 0) > 50,
             "reranker": self.deps.reranker is not None,
             "llm_configured": self.deps.llm is not None,
@@ -669,7 +678,7 @@ class Pipeline:
         }
         result["timings_ms"] = {
             key: state.timings.get(key, 0)
-            for key in ("typos", "preview", "llm1", "llm2", "rules", "total")
+            for key in ("typos", "preview", "rerank", "llm1", "llm2", "rules", "total")
         }
         return result
 
