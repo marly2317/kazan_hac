@@ -58,10 +58,10 @@ services:
       # Открытая модель через OpenAI-совместимый роутер или локальный Ollama/vLLM.
       STE_LLM_BASE_URL: ${STE_LLM_BASE_URL:-https://openrouter.ai/api/v1}
       STE_LLM_API_KEY: ${STE_LLM_API_KEY:-}
-      STE_LLM_MODEL: ${STE_LLM_MODEL:-google/gemma-4-26b-a4b-it:free}
-      STE_LLM_FALLBACK_MODELS: ${STE_LLM_FALLBACK_MODELS:-google/gemma-4-31b-it:free}
+      STE_LLM_MODEL: ${STE_LLM_MODEL:-google/gemma-4-26b-a4b-it}
+      STE_LLM_FALLBACK_MODELS: ${STE_LLM_FALLBACK_MODELS:-}
       STE_LLM_STRUCTURED: ${STE_LLM_STRUCTURED:-prompt}
-      STE_LLM_MIN_INTERVAL: ${STE_LLM_MIN_INTERVAL:-3.1}
+      STE_LLM_MIN_INTERVAL: ${STE_LLM_MIN_INTERVAL:-0}
       STE_LLM_CACHE_DIR: /app/var/llm_cache
       STE_EMBEDDER_ENABLED: ${STE_EMBEDDER_ENABLED:-1}
       STE_RERANKER_ENABLED: ${STE_RERANKER_ENABLED:-1}

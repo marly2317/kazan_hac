@@ -45,10 +45,10 @@ SCOPE_OKPD2 = tuple(
 
 LLM_BASE_URL = _env("STE_LLM_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
 LLM_API_KEY = _env("STE_LLM_API_KEY")
-LLM_MODEL = _env("STE_LLM_MODEL", "google/gemma-4-26b-a4b-it:free")
+LLM_MODEL = _env("STE_LLM_MODEL", "google/gemma-4-26b-a4b-it")
 LLM_FALLBACK_MODELS = tuple(
     item.strip()
-    for item in _env("STE_LLM_FALLBACK_MODELS", "google/gemma-4-31b-it:free").split(",")
+    for item in _env("STE_LLM_FALLBACK_MODELS", "").split(",")
     if item.strip()
 )
 #: ``prompt`` — схема описывается в промпте, ответ валидируется кодом (+1 повтор);
@@ -63,7 +63,7 @@ LLM_REFERER = _env("STE_LLM_REFERER")
 #: Только ASCII: значение уходит в HTTP-заголовок.
 LLM_TITLE = _env("STE_LLM_TITLE", "Tender Hack Kazan - KTRU autofill")
 #: Минимальный интервал между вызовами, секунды: бесплатный тариф — 20 запросов в минуту.
-LLM_MIN_INTERVAL = _float("STE_LLM_MIN_INTERVAL", 3.1)
+LLM_MIN_INTERVAL = _float("STE_LLM_MIN_INTERVAL", 0.0)
 LLM_CACHE_DIR = Path(_env("STE_LLM_CACHE_DIR", str(BACKEND_DIR / "var" / "llm_cache")))
 LLM_ENABLED = _flag("STE_LLM_ENABLED", True)
 
