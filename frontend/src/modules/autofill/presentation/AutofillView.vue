@@ -92,15 +92,23 @@ function copy(code: string): void {
 
       <section v-if="result.trace" class="ste-block ste-trace">
         <h3>Как отработала система</h3>
+        <p>Тип товара определил: <b>{{ result.trace.family_by }}</b></p>
+        <table v-if="result.trace.steps?.length" class="ste-steps">
+          <thead>
+            <tr><th>#</th><th>Шаг</th><th>Модель / метод</th><th>мс</th><th>Что произошло</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="(step, index) in result.trace.steps" :key="index">
+              <td>{{ index + 1 }}</td>
+              <td>{{ step.step }}</td>
+              <td>{{ step.model ?? '—' }}</td>
+              <td>{{ step.ms }}</td>
+              <td>{{ step.note }}</td>
+            </tr>
+          </tbody>
+        </table>
         <ul>
-          <li>Тип товара определил: <b>{{ result.trace.family_by }}</b></li>
-          <li>
-            LLM-1 (выбор семейства): {{ result.trace.llm1_called ? `вызвана, ${result.timings_ms.llm1} мс` : 'не вызывалась на этом шаге' }}
-          </li>
-          <li>
-            LLM-2 (извлечение характеристик): {{ result.trace.llm2_called ? `вызвана, ${result.timings_ms.llm2} мс` : 'не вызывалась на этом шаге' }}
-          </li>
-          <li>Реранкер: {{ result.trace.reranker ? (result.timings_ms.rerank ? `включён, ${result.timings_ms.rerank} мс` : 'включён (на этом шаге не нужен)') : 'выключен' }} · LLM: {{ result.trace.llm_configured ? 'настроена' : 'не настроена (нет ключа)' }}</li>
+          <li>LLM: {{ result.trace.llm_configured ? 'настроена' : 'не настроена (нет ключа) — работают правила' }}</li>
           <li v-if="result.trace.llm_error" class="error-text">{{ result.trace.llm_error }}</li>
         </ul>
       </section>
@@ -279,4 +287,7 @@ function copy(code: string): void {
 .ste-leaves { padding-left: 18px; }
 .ste-timings { font-size: 0.8em; }
 .ste-trace ul { margin: 0; padding-left: 18px; }
+.ste-steps { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 0.92em; }
+.ste-steps th, .ste-steps td { border-bottom: 1px solid var(--line); padding: 4px 6px; text-align: left; vertical-align: top; }
+.ste-steps td:nth-child(4) { text-align: right; white-space: nowrap; }
 </style>

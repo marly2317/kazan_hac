@@ -47,9 +47,7 @@ LLM_BASE_URL = _env("STE_LLM_BASE_URL", "https://openrouter.ai/api/v1").rstrip("
 LLM_API_KEY = _env("STE_LLM_API_KEY")
 LLM_MODEL = _env("STE_LLM_MODEL", "google/gemma-4-26b-a4b-it")
 LLM_FALLBACK_MODELS = tuple(
-    item.strip()
-    for item in _env("STE_LLM_FALLBACK_MODELS", "").split(",")
-    if item.strip()
+    item.strip() for item in _env("STE_LLM_FALLBACK_MODELS", "").split(",") if item.strip()
 )
 #: ``prompt`` — схема описывается в промпте, ответ валидируется кодом (+1 повтор);
 #: ``json_schema`` — ``response_format`` с JSON-схемой (ограниченное декодирование).

@@ -29,6 +29,7 @@ from apps.ste.domain.normalize import (
     compatible,
     convert_value,
     display_value,
+    fits_number,
     has_content,
     is_interval_choice,
     split_items,
@@ -153,6 +154,7 @@ def narrow(
         base = (family_scores or {}).get(leaf.family_id, 1.0)
         score = base * PENALTY_WEAK ** len(weak) * PENALTY_MISSING ** len(missing)
         remaining.append(RankedLeaf(leaf, score, tuple(weak), tuple(missing)))
+    remaining = _most_specific(remaining, usable, strong)
     remaining.sort(key=lambda item: (-item.score, item.code))
 
     steps = _steps(leaves, usable, strong, excluded)
@@ -166,6 +168,80 @@ def narrow(
         conflict=conflict,
         total=len(leaves),
     )
+
+
+def _most_specific(
+    remaining: list[RankedLeaf], values: dict[str, NormalizedValue], strong: list[str]
+) -> list[RankedLeaf]:
+    """Уточнить выбор между листьями, у которых число попало в несколько интервалов.
+
+    * Ответ кнопкой-интервалом («≥60 ≤82 Сантиметр») по неизменяемой (kind=1)
+      характеристике — это ровно интервал того листа: остаются листья, у которых он есть
+      дословно (и те, у кого характеристики нет). Иначе служебная точка внутри интервала
+      (71) попала бы и в соседний «≥71 ≤80», и лист «≥60 ≤82» стал бы недостижим.
+    * Число из текста среди градаций «≥0,25», «≥0,35», «≥0,5» (kind=1, открытые с одной
+      стороны): 0,5 попадает во все три, но КТРУ относит товар к самой узкой — «≥0,5».
+      Пересекающиеся закрытые интервалы («≥60 ≤82» и «≥71 ≤80») так не решаются: это
+      неоднозначность, её снимает вопрос.
+    """
+    for key in strong:
+        nv = values[key]
+        if nv.value_type != "number" or nv.number is None or not nv.unit_ok:
+            continue
+        if is_interval_choice(nv):
+            exact = [
+                item
+                for item in remaining
+                if key not in item.leaf.chars  # нет характеристики — нейтрально
+                or item.leaf.chars[key].kind != 1  # список на выбор: точка внутри интервала
+                or any(value.describe() in nv.matched for value in item.leaf.chars[key].allowed)
+            ]
+            if exact and len(exact) < len(remaining):
+                remaining = exact
+            continue
+        number = nv.number_in_ktru_unit if nv.number_in_ktru_unit is not None else nv.number
+        unit = U.parse_unit(nv.ktru_unit) if nv.ktru_unit else None
+        hits: dict[str, AllowedValue] = {}
+        for item in remaining:
+            spec = item.leaf.chars.get(key)
+            if spec is None or spec.kind != 1:
+                continue
+            found = fits_number(spec.allowed, number, unit)
+            if len(found) == 1 and _one_sided(found[0]):
+                hits[item.leaf.code] = found[0]
+        if len(hits) < 2:
+            continue
+        looser = {
+            code
+            for code, value in hits.items()
+            if any(_strictly_inside(other, value) for other in hits.values())
+        }
+        if looser and len(looser) < len(remaining):
+            remaining = [item for item in remaining if item.leaf.code not in looser]
+    return remaining
+
+
+def _one_sided(value: AllowedValue) -> bool:
+    return value.kind == "range" and (value.minimum is None) != (value.maximum is None)
+
+
+def _bounds(value: AllowedValue) -> tuple[float, bool, float, bool]:
+    if value.kind == "concrete" and value.concrete is not None:
+        return value.concrete, True, value.concrete, True
+    low = value.minimum if value.minimum is not None else float("-inf")
+    high = value.maximum if value.maximum is not None else float("inf")
+    return low, value.min_inclusive, high, value.max_inclusive
+
+
+def _strictly_inside(inner: AllowedValue, outer: AllowedValue) -> bool:
+    """``inner`` ⊊ ``outer``; значения в разных единицах не сравниваются."""
+    if inner.unit_name != outer.unit_name or not (inner.is_numeric and outer.is_numeric):
+        return False
+    lo_i, lo_i_inc, hi_i, hi_i_inc = _bounds(inner)
+    lo_o, lo_o_inc, hi_o, hi_o_inc = _bounds(outer)
+    low_ok = lo_o < lo_i or (lo_o == lo_i and (lo_o_inc or not lo_i_inc))
+    high_ok = hi_i < hi_o or (hi_i == hi_o and (hi_o_inc or not hi_i_inc))
+    return low_ok and high_ok and _bounds(inner) != _bounds(outer)
 
 
 def _steps(

@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import math
 import re
+import threading
 import time
 from dataclasses import asdict, dataclass, field
 from typing import Any
@@ -64,6 +65,8 @@ class State:
     chosen_leaf: str | None = None
     llm_note: str | None = None
     timings: dict[str, int] = field(default_factory=dict)
+    #: Шаги последнего запроса по порядку — для блока «Как отработала система».
+    steps: list[dict] = field(default_factory=list)
 
     def to_json(self) -> dict:
         return asdict(self)
@@ -97,8 +100,71 @@ def _nv_from(data: dict):
     return NormalizedValue(**{key: value for key, value in payload.items() if key in known})
 
 
+_STAGE_NOTES = {
+    "done": "итог: код определён",
+    "question": "итог: нужен уточняющий вопрос",
+    "not_found": "итог: подходящего КТРУ нет",
+    "conflict": "итог: противоречие с КТРУ",
+}
+
+
+def _outcome_note(result: dict) -> str:
+    note = _STAGE_NOTES.get(result.get("stage", ""), f"итог: {result.get('stage', '')}")
+    if result.get("final_code"):
+        note += f" {result['final_code']}"
+    elif result.get("leaves_count"):
+        note += f"; осталось кодов: {result['leaves_count']}"
+    return note
+
+
 def _ms(start: float) -> int:
     return int((time.perf_counter() - start) * 1000)
+
+
+class _RecordedLlm:
+    """Обёртка клиента LLM: каждый вызов записывается в шаги запроса (модель, время, кэш)."""
+
+    def __init__(self, llm: Any, steps: list[dict], lock: threading.Lock, label: str) -> None:
+        self._llm = llm
+        self._label = label
+        self._steps = steps
+        self._lock = lock
+
+    def complete_json(self, messages, schema, name, *args, **kwargs):
+        started = time.perf_counter()
+        try:
+            response = self._llm.complete_json(messages, schema, name, *args, **kwargs)
+        except Exception as error:
+            with self._lock:
+                self._steps.append(
+                    {
+                        "step": self._label,
+                        "model": getattr(self._llm, "model", None),
+                        "ms": _ms(started),
+                        "note": f"ошибка: {error}"[:200],
+                    }
+                )
+            raise
+        usage = getattr(response, "usage", {}) or {}
+        tokens = usage.get("total_tokens")
+        note = (
+            "ответ из кэша, запроса к модели не было"
+            if getattr(response, "cached", False)
+            else (f"{tokens} токенов" if tokens else "запрос к модели")
+        )
+        with self._lock:
+            self._steps.append(
+                {
+                    "step": self._label,
+                    "model": getattr(response, "model", None),
+                    "ms": _ms(started),
+                    "note": note,
+                }
+            )
+        return response
+
+    def __getattr__(self, name: str):
+        return getattr(self._llm, name)
 
 
 # --- зависимости ---------------------------------------------------------------------------
@@ -112,6 +178,9 @@ class Deps:
     llm: Any | None  # LlmClient | None
     store: Any  # SessionStore
     reranker: Any | None = None  # Reranker | None
+
+
+_STEPS_LOCK = threading.Lock()
 
 
 class PipelineError(Exception):
@@ -143,13 +212,20 @@ class Pipeline:
         state.text = join_compound_lengths(state.text)
         state.fixes = [asdict(fix) for fix in fixes]
         state.timings["typos"] = _ms(start)
+        self._step(
+            state,
+            "Опечатки и раскладка",
+            "SymSpell + раскладка клавиатуры по словарю КТРУ (без нейросети)",
+            state.timings["typos"],
+            f"исправлено слов: {len(fixes)}" if fixes else "исправлять нечего",
+        )
 
         if not state.text.strip():
             state.selection = {"not_found": True, "mode": "empty", "reason": "Пустое описание"}
             return self._finish(state, session_id, total)
 
         start = time.perf_counter()
-        hits = self._search(state.text, k=max(config.FAMILY_TOP_K, 10))
+        hits = self._search(state.text, k=max(config.FAMILY_TOP_K, 10), state=state)
         state.preview = [self._hit_json(hit) for hit in hits[:5]]
         state.timings["preview"] = _ms(start)
 
@@ -208,7 +284,9 @@ class Pipeline:
             try:
                 from apps.ste.application.llm_steps import extract_one
 
-                ev = extract_one(self.deps.llm, text, family, char_key)
+                ev = extract_one(
+                    self._llm(state, "mini-LLM-2 · разбор ответа"), text, family, char_key
+                )
                 llm_answered = True
             except Exception as error:  # noqa: BLE001 — деградация вместо отказа
                 logger.warning("mini-LLM-2 недоступна: %s", error)
@@ -273,6 +351,17 @@ class Pipeline:
 
     # === шаги ================================================================================
 
+    def _llm(self, state: State, label: str):
+        """Клиент LLM, записывающий вызовы в шаги запроса; ``None`` — LLM не настроена."""
+        if self.deps.llm is None:
+            return None
+        return _RecordedLlm(self.deps.llm, state.steps, _STEPS_LOCK, label)
+
+    @staticmethod
+    def _step(state: State, step: str, model: str | None, ms: int, note: str = "") -> None:
+        with _STEPS_LOCK:
+            state.steps.append({"step": step, "model": model, "ms": ms, "note": note})
+
     def _correct(self, text: str) -> tuple[str, list[TypoFix]]:
         try:
             result = self.deps.corrector.correct(text)
@@ -281,12 +370,42 @@ class Pipeline:
             logger.warning("Корректор отказал: %s", error)
             return text, []
 
-    def _search(self, text: str, k: int) -> list[FamilyHit]:
+    def _search(self, text: str, k: int, state: State | None = None) -> list[FamilyHit]:
+        retriever = self.deps.retriever
         try:
-            return list(self.deps.retriever.search(text, k=k))
+            if state is None or not hasattr(retriever, "search_timed"):
+                return list(retriever.search(text, k=k))
+            hits, timings = retriever.search_timed(text, k=k)
         except Exception as error:  # noqa: BLE001
             logger.warning("Поиск отказал: %s", error)
             return []
+        families = len(getattr(retriever, "families", ()) or ())
+        self._step(
+            state,
+            "Лексический поиск BM25",
+            "BM25 со стеммингом Snowball (без нейросети)",
+            int(timings.get("clean", 0) + timings.get("bm25", 0)),
+            f"по карточкам {families} семейств-родителей",
+        )
+        embedder = getattr(retriever, "embedder", None)
+        vectors_on = "vector" in timings and getattr(retriever, "has_vectors", False)
+        self._step(
+            state,
+            "Векторный поиск",
+            getattr(embedder, "model_name", None) or "Qwen3-Embedding-0.6B",
+            int(timings.get("vector", 0)),
+            "вектор запроса · косинус к векторам семейств"
+            if vectors_on
+            else "выключен — только BM25",
+        )
+        self._step(
+            state,
+            "Слияние BM25 + векторы (RRF)",
+            "формула, без нейросети",
+            int(timings.get("fuse", 0)),
+            f"топ-{len(hits)}: " + ", ".join(hit.name for hit in hits[:3]) if hits else "пусто",
+        )
+        return list(hits)
 
     def _hit_json(self, hit: FamilyHit) -> dict:
         return {
@@ -320,9 +439,7 @@ class Pipeline:
         # лучше в топ-3 на демо-сценариях. Оценка реранкера — для уверенности и «не найдено».
         by_margin = sorted(range(len(top)), key=lambda i: -margins[i])
         rerank_pos = {index: place for place, index in enumerate(by_margin, start=1)}
-        order = sorted(
-            range(len(top)), key=lambda i: -(1 / (61 + i) + 1 / (60 + rerank_pos[i]))
-        )
+        order = sorted(range(len(top)), key=lambda i: -(1 / (61 + i) + 1 / (60 + rerank_pos[i])))
         return [(top[i], 1 / (1 + math.exp(-margins[i]))) for i in order]
 
     def _select_family(self, state: State, hits: list[FamilyHit]) -> None:
@@ -331,12 +448,29 @@ class Pipeline:
         ranked = self._rerank(state.text, hits)
         if ranked is not None:
             state.timings["rerank"] = _ms(start)
+            device = getattr(self.deps.reranker, "device", None)
+            self._step(
+                state,
+                "Реранкер",
+                "Qwen3-Reranker-0.6B" + (f" ({device})" if device else ""),
+                state.timings["rerank"],
+                f"оценил {min(len(hits), config.RERANK_TOP)} карточек; лидер "
+                f"«{ranked[0][0].name}» P={ranked[0][1]:.2f}",
+            )
             state.preview = [
                 {**self._hit_json(hit), "score": round(prob, 4)} for hit, prob in ranked[:5]
             ]
             (top, p1) = ranked[0]
             p2 = ranked[1][1] if len(ranked) > 1 else 0.0
             if p1 >= config.RERANK_CONFIDENT and p1 - p2 >= config.RERANK_MARGIN:
+                self._step(
+                    state,
+                    "LLM-1 · выбор семейства",
+                    None,
+                    0,
+                    f"не вызывалась: реранкер уверен (P ≥ {config.RERANK_CONFIDENT} "
+                    f"и отрыв ≥ {config.RERANK_MARGIN})",
+                )
                 state.candidates = [asdict(FamilyChoice(top.family_id, p1, "реранкер уверен"))]
                 state.selection = {"not_found": False, "mode": "reranker", "reason": "реранкер"}
                 return
@@ -458,7 +592,7 @@ class Pipeline:
             ]
         generic = self.kb.generic()
         result = select_family(
-            self.deps.llm,
+            self._llm(state, "LLM-1 · выбор семейства"),
             state.text,
             [short_card(family) for family in families],
             [generic_card(family) for family in generic],
@@ -511,18 +645,19 @@ class Pipeline:
         from concurrent.futures import ThreadPoolExecutor
 
         with ThreadPoolExecutor(max_workers=len(family_ids)) as pool:
-            fetched = list(pool.map(lambda fid: self._call_llm2(state.text, fid), family_ids))
+            fetched = list(pool.map(lambda fid: self._call_llm2(state, fid), family_ids))
         for family_id, outcome in zip(family_ids, fetched, strict=True):
             self._extract(state, family_id, prefetched=outcome)
 
-    def _call_llm2(self, text: str, family_id: str):
+    def _call_llm2(self, state: State, family_id: str):
         from apps.ste.application.llm_steps import extract_values
 
         family = self.kb.families[family_id]
         if not family.chars:
             return None
         try:
-            return extract_values(self.deps.llm, text, family)
+            llm = self._llm(state, f"LLM-2 · характеристики «{family.name}»")
+            return extract_values(llm, state.text, family)
         except Exception as error:  # noqa: BLE001
             return error
 
@@ -533,9 +668,7 @@ class Pipeline:
         extra: list[dict] = []
         duplicates: list[dict] = []
         if self.deps.llm is not None and family.chars:
-            result = (
-                prefetched if prefetched is not None else self._call_llm2(state.text, family_id)
-            )
+            result = prefetched if prefetched is not None else self._call_llm2(state, family_id)
             if isinstance(result, Exception):
                 logger.warning("LLM-2 недоступна: %s", result)
                 state.llm_note = _llm_note(result)
@@ -549,7 +682,15 @@ class Pipeline:
         if not extracted and family.chars:
             from apps.ste.application.rule_extract import extract_by_rules
 
+            start = time.perf_counter()
             extracted = extract_by_rules(state.text, family)
+            self._step(
+                state,
+                f"Извлечение без LLM «{family.name}»",
+                "правила по словарю семейства",
+                _ms(start),
+                f"найдено значений: {len(extracted)}",
+            )
         state.extracted[family_id] = {key: asdict(ev) for key, ev in extracted.items()}
         state.extra[family_id] = extra
         state.duplicates[family_id] = duplicates
@@ -656,6 +797,13 @@ class Pipeline:
         start = time.perf_counter()
         result = self.evaluate(state)
         state.timings["rules"] = _ms(start)
+        self._step(
+            state,
+            "Нормализация, сужение до кода, вопросы, ошибки",
+            "детерминированный код по КТРУ (без нейросети)",
+            state.timings["rules"],
+            _outcome_note(result),
+        )
         state.timings["total"] = _ms(total_start)
         session_id = self.deps.store.save(session_id, state.to_json())
         result["session_id"] = session_id
@@ -675,6 +823,7 @@ class Pipeline:
             "reranker": self.deps.reranker is not None,
             "llm_configured": self.deps.llm is not None,
             "llm_error": state.llm_note,
+            "steps": list(state.steps),
         }
         result["timings_ms"] = {
             key: state.timings.get(key, 0)
@@ -688,6 +837,7 @@ class Pipeline:
             raise PipelineError("Сессия не найдена — начните с описания товара.")
         state = State.from_json(data)
         state.timings = {}
+        state.steps = []
         return state
 
     def evaluate(self, state: State) -> dict:

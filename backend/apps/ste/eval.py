@@ -5,6 +5,7 @@
     python -m apps.ste.eval --no-llm               # весь пайплайн правилами (деградация)
     python -m apps.ste.eval --ids t01,t02          # весь пайплайн с LLM (ответы кэшируются)
     python -m apps.ste.eval --limit 10 --verbose
+    python -m apps.ste.eval --leaves               # достижим ли вопросами каждый лист КТРУ
 
 Каждый прогон с LLM стоит до двух запросов на кейс; ответы кэшируются на диске, поэтому
 повторный прогон тех же кейсов бесплатен.
@@ -147,6 +148,84 @@ def eval_pipeline(cases: list[dict], use_llm: bool, verbose: bool) -> int:
     return 1 if wrong_confident else 0
 
 
+def eval_leaves(verbose: bool) -> int:
+    """Достижимость дочерних позиций: пользователь знает истинный лист и отвечает на вопросы.
+
+    Для каждого листа каждого семейства: семейство выбрано, значений нет; на каждый вопрос
+    «пользователь» нажимает вариант, который оставляет его лист. Лист достигнут, если пайплайн
+    выдал ровно его код. Вопрос «выберите позицию из списка» в конце — только у листьев, которые
+    в КТРУ не различаются ни одной характеристикой (дубли), — считается отдельно. Без LLM и сети.
+    """
+    import copy
+    from collections import Counter
+
+    from apps.ste.application.pipeline import Deps, Pipeline, State
+    from apps.ste.infrastructure.session_store import MemorySessionStore
+    from apps.ste.runtime import knowledge_base
+
+    class _NoCorrection:
+        def correct(self, text):
+            from apps.ste.application.typos import TypoResult
+
+            return TypoResult(text, text)
+
+    class _NoSearch:
+        def search(self, text, k=30):
+            return []
+
+    kb = knowledge_base()
+    store = MemorySessionStore()
+    pipeline = Pipeline(
+        Deps(kb=kb, corrector=_NoCorrection(), retriever=_NoSearch(), llm=None, store=store)
+    )
+    stats: Counter[str] = Counter()
+    questions: list[int] = []
+    failures: list[str] = []
+    started = time.perf_counter()
+    for family in kb.selectable():
+        for leaf in kb.leaves_of(family.id):
+            stats["листьев"] += 1
+            session = pipeline.analyze("товар")["session_id"]
+            result = pipeline.choose_family(session, family.id)
+            asked = 0
+            while result["stage"] == "question" and result["question"]["kind"] == "char":
+                question = result["question"]
+                for option in question["options"]:
+                    trial = store.save(None, copy.deepcopy(store.load(session)))
+                    answered = pipeline.answer(trial, question["char_key"], option["value"])
+                    state = State.from_json(store.load(trial))
+                    left = {item.leaf.code for item in pipeline._remaining(state, family, 1.0)}
+                    if leaf.code in left or answered.get("final_code") == leaf.code:
+                        session, result = trial, answered
+                        break
+                else:
+                    break
+                asked += 1
+                if asked > 20:
+                    break
+            if result["stage"] == "done" and result.get("final_code") == leaf.code:
+                stats["достигнут вопросами"] += 1
+                questions.append(asked)
+            elif (
+                result["stage"] == "question"
+                and result["question"]["kind"] == "leaf"
+                and any(option["value"] == leaf.code for option in result["question"]["options"])
+            ):
+                stats["выбор из списка (дубли КТРУ)"] += 1
+            else:
+                stats["НЕ ДОСТИГНУТ"] += 1
+                failures.append(f"{leaf.code} {leaf.name}: {result['stage']}")
+    print(dict(stats))
+    if questions:
+        print(
+            f"вопросов до кода: медиана {statistics.median(questions)}, максимум {max(questions)}"
+        )
+    print(f"время: {time.perf_counter() - started:.0f} с")
+    for line in failures[: None if verbose else 20]:
+        print("  ", line)
+    return 1 if failures else 0
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--retrieval", action="store_true")
@@ -155,7 +234,10 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--variant", default="")
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--verbose", action="store_true")
+    parser.add_argument("--leaves", action="store_true")
     args = parser.parse_args(argv)
+    if args.leaves:
+        return eval_leaves(args.verbose)
 
     cases = load_cases()
     if args.ids:

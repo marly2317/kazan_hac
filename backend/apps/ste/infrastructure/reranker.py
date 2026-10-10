@@ -40,6 +40,8 @@ class Reranker:
         self._ids: tuple[int, int] | None = None
         self._lock = threading.Lock()
         self._broken = False
+        #: ``cuda`` или ``cpu`` — после загрузки модели; для трассировки.
+        self.device: str | None = None
 
     @property
     def available(self) -> bool:
@@ -63,6 +65,7 @@ class Reranker:
                 dtype = torch.float16 if device == "cuda" else torch.float32
                 model = AutoModelForCausalLM.from_pretrained(self.path, dtype=dtype).eval()
                 self._model = model.to(device)
+                self.device = device
                 self._tokenizer = tokenizer
                 self._ids = (
                     tokenizer.convert_tokens_to_ids("no"),

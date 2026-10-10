@@ -21,8 +21,8 @@ from dataclasses import dataclass, field
 
 from apps.ste.domain.kb import CharSpec, Leaf
 from apps.ste.domain.model import NormalizedValue, Question, QuestionOption, Source
-from apps.ste.domain.narrowing import RankedLeaf, leaf_distinctions
-from apps.ste.domain.normalize import compatible, has_content, value_from_allowed
+from apps.ste.domain.narrowing import RankedLeaf, leaf_distinctions, narrow
+from apps.ste.domain.normalize import has_content, value_from_allowed
 from apps.ste.domain.values import AllowedValue, fold_text
 
 #: Значение кнопки «Не знаю» (контракт API: ``answer`` с ``value="__unknown__"``).
@@ -104,16 +104,12 @@ def _evaluate(key: str, leaves: list[Leaf], order: int) -> _Candidate | None:
     total = len(leaves)
     scored: list[tuple[QuestionOption, AllowedValue]] = []
     for option_key, value in options.items():
-        nv: NormalizedValue | None = None
-        count = 0
-        for spec, keyset in zip(specs, keysets, strict=True):
-            if keyset is None or option_key in keyset:
-                count += 1
-            elif value.is_numeric:
-                # Интервал другого листа может пересекаться с вариантом — проверка числом,
-                # ровно как при сужении после ответа кнопкой.
-                nv = nv or value_from_allowed(reference, value)
-                count += compatible(spec, nv) is not False
+        if value.is_numeric:
+            # Число проходит то же сужение, что и ответ кнопкой: пересечение интервалов и
+            # выбор самой узкой градации («≥0,5» не оставляет лист «≥0,25»).
+            count = len(narrow(leaves, {key: value_from_allowed(reference, value)}).remaining)
+        else:
+            count = sum(1 for keyset in keysets if keyset is None or option_key in keyset)
         label = value.describe()
         scored.append((QuestionOption(label=label, value=label, remaining=count), value))
     if all(option.remaining >= total for option, _ in scored):

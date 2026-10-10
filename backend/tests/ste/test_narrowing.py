@@ -399,3 +399,37 @@ def test_grinder_distinctions_start_with_kind(kb):
     assert all(row[0][0] == "Вид" for row in rows.values())
     assert rows["28.24.11.000-00000036"][0] == ("Вид", "Углошлифовальная машина")
     assert all(len(row) == 3 for row in rows.values())
+
+
+# --- градации и интервалы неизменяемых характеристик -------------------------------------------
+
+
+def _grade(code, low):
+    return leaf(code, spec("Свинцовый эквивалент", [rng(low, None)], type_=2, kind=1))
+
+
+def test_number_goes_to_the_narrowest_grade():
+    """0,5 попадает в «≥0,25», «≥0,35» и «≥0,5»; КТРУ относит товар к самой узкой градации."""
+    leaves = [_grade("G25", 0.25), _grade("G35", 0.35), _grade("G50", 0.5)]
+    char = leaves[0].chars["свинцовый эквивалент"]
+    assert narrow(leaves, {char.key: value(char, 0.5, "мм", Confidence.CONFIRMED)}).codes == ["G50"]
+    assert narrow(leaves, {char.key: value(char, 0.3, "мм", Confidence.CONFIRMED)}).codes == ["G25"]
+
+
+def test_grade_button_reaches_its_own_leaf():
+    leaves = [_grade("G25", 0.25), _grade("G50", 0.5)]
+    char = leaves[0].chars["свинцовый эквивалент"]
+    for code, label in (("G25", "≥0,25 Миллиметр"), ("G50", "≥0,5 Миллиметр")):
+        answer = option_value(char, label) or option_value(leaves[1].chars[char.key], label)
+        assert narrow(leaves, {char.key: answer}).codes == [code]
+
+
+def test_overlapping_closed_intervals_button_is_exact_for_kind1():
+    """«≥60 ≤82» и «≥71 ≤80»: служебная точка 71 попадает в оба, но кнопка — интервал листа."""
+    wide = leaf("W", spec("Длина", [rng(60, 82, high_inc=True)], type_=2, kind=1))
+    tight = leaf("T", spec("Длина", [rng(71, 80, high_inc=True)], type_=2, kind=1))
+    answer = option_value(wide.chars["длина"], "≥60 ≤82 Миллиметр")
+    assert narrow([wide, tight], {"длина": answer}).codes == ["W"]
+    # Число из текста в пересечении закрытых интервалов — неоднозначность, её снимает вопрос.
+    typed = value(wide.chars["длина"], 75, "мм", Confidence.CONFIRMED)
+    assert sorted(narrow([wide, tight], {"длина": typed}).codes) == ["T", "W"]

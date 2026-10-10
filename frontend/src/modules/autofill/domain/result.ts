@@ -92,6 +92,7 @@ export type Result = {
     reranker_ms?: number | null;
     llm_configured: boolean;
     llm_error: string | null;
+    steps?: { step: string; model: string | null; ms: number; note: string }[];
   };
 };
 
