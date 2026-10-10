@@ -18,7 +18,7 @@ from apps.ste.domain.model import (
     Status,
     TypoFix,
 )
-from apps.ste.domain.values import describe_all, format_number, nearest
+from apps.ste.domain.values import format_number, nearest
 
 _ORDER = {Severity.ERROR: 0, Severity.WARNING: 1, Severity.INFO: 2}
 
@@ -31,6 +31,43 @@ def _user_value(ev: ExtractedValue, nv: NormalizedValue | None) -> str:
     if isinstance(ev.value, float):
         return format_number(ev.value) + (f" {ev.unit}" if ev.unit else "")
     return str(ev.value or "")
+
+
+def _numeric_summary(spec) -> tuple[str, list[str]]:
+    """Допустимые числа КТРУ по возрастанию + краткая запись для сообщения.
+
+    Сорок соседних полос «>60 ≤65», «>65 ≤70»… пользователю не нужны поштучно: ему нужно
+    понять, что допустимо «от 60 до 250 Сантиметр». Полосы склеиваются, если идут встык.
+    """
+    from apps.ste.domain.narrowing import allowed_values
+
+    values = [value for value in allowed_values([spec]) if value.is_numeric]
+    described = [value.describe() for value in values]
+    spans: list[list[float | None]] = []
+    unit_name = ""
+    for value in values:
+        unit_name = unit_name or value.unit_name_short
+        low = value.concrete if value.kind == "concrete" else value.minimum
+        high = value.concrete if value.kind == "concrete" else value.maximum
+        if spans and spans[-1][1] is not None and low is not None and low <= spans[-1][1]:
+            if high is None or (spans[-1][1] is not None and high > spans[-1][1]):
+                spans[-1][1] = high
+            continue
+        spans.append([low, high])
+    parts = []
+    for low, high in spans[:4]:
+        if low is not None and high is not None and low != high:
+            parts.append(f"от {format_number(low)} до {format_number(high)}")
+        elif low is not None and high is None:
+            parts.append(f"от {format_number(low)}")
+        elif high is not None and low is None:
+            parts.append(f"до {format_number(high)}")
+        elif low is not None:
+            parts.append(format_number(low))
+    summary = ", ".join(parts) + (f" {unit_name}" if unit_name else "")
+    if len(spans) > 4:
+        summary += f" и ещё {len(spans) - 4} диапазона"
+    return summary.strip(), described
 
 
 def value_signals(spec, ev: ExtractedValue, nv: NormalizedValue, family_id: str | None = None):
@@ -97,18 +134,31 @@ def value_signals(spec, ev: ExtractedValue, nv: NormalizedValue, family_id: str 
             )
         elif nv.unit_ok and not nv.matched and any(value.is_numeric for value in spec.allowed):
             value_in_unit = nv.number if nv.number_in_ktru_unit is None else nv.number_in_ktru_unit
-            near = nearest(list(spec.allowed), value_in_unit)
+            from apps.ste.domain.narrowing import nearest_allowed
+
+            near = nearest_allowed([spec], nv)
+            if near is None:
+                fallback = nearest(list(spec.allowed), value_in_unit)
+                near = fallback.describe() if fallback else None
+            summary, described = _numeric_summary(spec)
+            shown = user
+            if nv.ktru_unit and nv.user_unit and nv.ktru_unit != nv.user_unit:
+                shown += f" (= {format_number(value_in_unit)} {nv.ktru_unit})"
             out.append(
                 Signal(
                     type=SignalType.OUT_OF_RANGE,
                     severity=Severity.ERROR,
                     message=(
-                        f"«{spec.name}» = {user}: такого значения нет в КТРУ. Допустимо: "
-                        f"{describe_all(list(spec.allowed))}."
+                        f"«{spec.name}» = {shown}: такого значения нет в КТРУ — "
+                        f"справочник допускает {summary}."
                     ),
-                    allowed=[value.describe() for value in spec.allowed][:12],
-                    nearest_allowed=near.describe() if near else None,
-                    suggestion=f"Ближайшее допустимое: {near.describe()}." if near else None,
+                    allowed=described[:12],
+                    nearest_allowed=near,
+                    suggestion=(
+                        f"Проверьте значение и единицу; ближайшее допустимое: {near}."
+                        if near
+                        else None
+                    ),
                     **base,
                 )
             )

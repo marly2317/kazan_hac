@@ -23,10 +23,27 @@ def main(argv: list[str]) -> int:
 
     name, destination = argv[1], argv[2]
 
+    # Снимок репозитория как есть, а не пересохранение через SentenceTransformer: веса
+    # остаются в исходном bf16 (1,2 ГБ вместо 2,4 ГБ в образе), а считает модель всё равно в
+    # fp32 — sentence-transformers поднимает их в float32 при загрузке.
+    from huggingface_hub import snapshot_download
+
+    snapshot_download(
+        name,
+        local_dir=destination,
+        allow_patterns=[
+            "*.json",
+            "*.safetensors",
+            "*.txt",
+            "*.model",
+            "1_Pooling/*",
+            "2_Normalize/*",
+        ],
+    )
+
     from sentence_transformers import SentenceTransformer
 
-    model = SentenceTransformer(name)
-    model.save(destination)
+    model = SentenceTransformer(destination, device="cpu")
     print(f"{name} → {destination}, {model.get_sentence_embedding_dimension()} измерений")
     return 0
 
