@@ -452,9 +452,9 @@ class Pipeline:
                 "Реранкер",
                 "Qwen3-Reranker-0.6B",
                 _ms(start),
-                "выключен (STE_RERANKER_ENABLED=0) — LLM-1 получает топ поиска целиком"
+                "выключен (STE_RERANKER_ENABLED=0)"
                 if self.deps.reranker is None
-                else "не сработал (нет весов или ошибка, см. лог) — LLM-1 получает топ поиска",
+                else "не сработал (нет весов или ошибка, см. лог)",
             )
         if ranked is not None:
             state.timings["rerank"] = _ms(start)
@@ -545,6 +545,20 @@ class Pipeline:
                 "reason": "Поиск не нашёл похожих семейств КТРУ",
             }
 
+    def _nearest_generic(self, text: str, k: int = 5) -> list[Family]:
+        """Общие позиции для LLM-1 — только ближайшие по поиску, а не все 81 (~5 тыс. токенов)."""
+        try:
+            hits = self.deps.retriever.search(text, k=k * 6, include_generic=True)
+        except TypeError:  # поиск без общих позиций (заглушки тестов)
+            return list(self.kb.generic())[:k]
+        generic = [
+            self.kb.families[hit.family_id]
+            for hit in hits
+            if hit.family_id in self.kb.families
+            and self.kb.families[hit.family_id].role != "family"
+        ]
+        return generic[:k]
+
     def _llm1_enabled(self, state: State) -> bool:
         if self.deps.llm is None:
             return False
@@ -615,7 +629,7 @@ class Pipeline:
             families = [family for family in families if family.role == "family"][
                 : config.FAMILY_TOP_K
             ]
-        generic = self.kb.generic()
+        generic = self._nearest_generic(state.text)
         result = select_family(
             self._llm(state, "LLM-1 · выбор семейства"),
             state.text,
@@ -625,6 +639,8 @@ class Pipeline:
         )
         choices: list[FamilyChoice] = []
         for short_id, score, reason in result.candidates:
+            # Внутренний номер карточки («семейство F267») пользователю ничего не говорит.
+            reason = re.sub(r"\s*\(?\[?\bF\d+\]?\)?", "", reason or "").strip()
             family = self.kb.by_short_id(short_id)
             if family is not None:
                 choices.append(FamilyChoice(family.id, float(score), reason or ""))
@@ -835,7 +851,7 @@ class Pipeline:
         modes = {
             "fast": "поиск (однозначное совпадение, без LLM)",
             "reranker": "реранкер Qwen3-Reranker",
-            "llm": "LLM-1 (Gemma) из кандидатов поиска/реранкера",
+            "llm": f"LLM-1 ({config.LLM_MODEL}) из топ-{config.FAMILY_TOP_K} поиска",
             "fallback": "поиск (BM25 + векторы) и правила, без LLM",
             "user": "выбрано пользователем",
             "empty": "—",

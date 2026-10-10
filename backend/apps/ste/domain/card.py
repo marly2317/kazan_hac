@@ -20,6 +20,7 @@ from apps.ste.domain.kb import CharSpec, Family, FamilyChar, Leaf
 from apps.ste.domain.model import NormalizedValue, Source
 from apps.ste.domain.normalize import (
     display_value,
+    fits_number,
     has_content,
     is_interval_choice,
     spec_kinds,
@@ -116,6 +117,12 @@ def _row(
             number = nv.number_in_ktru_unit if nv.number_in_ktru_unit is not None else nv.number
             row["value"] = format_number(number)
             row["unit"] = nv.ktru_unit or row["unit"]
+            if isinstance(spec, CharSpec):
+                # Код выбран: «По КТРУ» — интервал этого кода, а не всех кодов семейства.
+                unit = U.parse_unit(nv.ktru_unit) if nv.ktru_unit else None
+                hits = fits_number(spec.allowed, number, unit)
+                if hits:
+                    row["ktru_value"] = "; ".join(value.describe() for value in hits)
         row["values"] = [row["value"]] if row["value"] else []
         return row
 
