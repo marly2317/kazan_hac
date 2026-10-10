@@ -205,7 +205,16 @@ def is_inflection(before: str, after: str) -> bool:
     """
     stem_before, end_before = _split_ending(before)
     stem_after, end_after = _split_ending(after)
-    return bool(end_before) and bool(end_after) and stem_before == stem_after
+    if stem_before == stem_after and (end_before or end_after):
+        return True
+    # «Халаты» → «Халат»: у одной формы окончание нулевое — только у основы на согласную,
+    # иначе «одеждыы» → «одежды» выглядело бы словоформой.
+    short, long_ = sorted((before, after), key=len)
+    return (
+        long_[: len(short)] == short
+        and long_[len(short) :] in _ENDINGS
+        and short[-1:] not in "аеёиоуыэюяьй"
+    )
 
 
 def _keep_case(original: str, word: str) -> str:

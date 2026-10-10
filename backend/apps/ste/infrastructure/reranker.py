@@ -75,8 +75,14 @@ class Reranker:
                 return False
         return True
 
-    def score(self, query: str, documents: Sequence[str]) -> list[float] | None:
-        """P(yes) для каждой пары (запрос, документ); ``None`` — реранкер недоступен."""
+    def score(
+        self, query: str, documents: Sequence[str], *, logits: bool = False
+    ) -> list[float] | None:
+        """P(yes) для каждой пары (запрос, документ); ``None`` — реранкер недоступен.
+
+        ``logits=True`` — разность логитов yes−no: она не насыщается у единицы, и порядок
+        между несколькими «почти наверняка да» остаётся осмысленным.
+        """
         if not documents or not self._load():
             return None
         import torch
@@ -97,9 +103,9 @@ class Reranker:
                         max_length=MAX_LENGTH,
                         return_tensors="pt",
                     ).to(self._model.device)
-                    logits = self._model(**batch).logits[:, -1, :]
-                    pair = torch.stack([logits[:, no_id], logits[:, yes_id]], dim=1)
-                    scores += torch.softmax(pair.float(), dim=1)[:, 1].tolist()
+                    out = self._model(**batch).logits[:, -1, :]
+                    margin = (out[:, yes_id] - out[:, no_id]).float()
+                    scores += (margin if logits else torch.sigmoid(margin)).tolist()
         except Exception as error:  # noqa: BLE001
             logger.warning("Реранкер отказал: %s", error)
             return None

@@ -12,6 +12,7 @@ LLM), а ответ всегда строится одной детермини�
 from __future__ import annotations
 
 import logging
+import math
 import time
 from dataclasses import asdict, dataclass, field
 from typing import Any
@@ -165,6 +166,7 @@ class Pipeline:
     def answer(self, session_id: str, char_key: str, value: str) -> dict:
         total = time.perf_counter()
         state = self._load(session_id)
+        state.llm_note = None
         family = self._focus_family(state)
         if family is None:
             raise PipelineError("Семейство ещё не определено — сначала выберите тип товара.")
@@ -227,6 +229,7 @@ class Pipeline:
     def edit(self, session_id: str, char_key: str, value: str) -> dict:
         total = time.perf_counter()
         state = self._load(session_id)
+        state.llm_note = None
         family = self._focus_family(state)
         if family is None or char_key not in family.chars:
             raise PipelineError("Неизвестная характеристика.")
@@ -257,6 +260,7 @@ class Pipeline:
     def choose_leaf(self, session_id: str, code: str) -> dict:
         total = time.perf_counter()
         state = self._load(session_id)
+        state.llm_note = None
         leaf = self.kb.leaves.get(code)
         if leaf is None:
             raise PipelineError("Неизвестный код КТРУ.")
@@ -305,13 +309,21 @@ class Pipeline:
         top = hits[: config.RERANK_TOP]
         documents = [short_card(self.kb.families[hit.family_id]).split("] ", 1)[-1] for hit in top]
         try:
-            scores = reranker.score(text, documents)
+            margins = reranker.score(text, documents, logits=True)
         except Exception as error:  # noqa: BLE001
             logger.warning("Реранкер отказал: %s", error)
             return None
-        if scores is None:
+        if margins is None:
             return None
-        return sorted(zip(top, scores, strict=True), key=lambda item: -item[1])
+        # Порядок — слияние мест поиска и реранкера (RRF): на реальных наименованиях СТЕ
+        # реранкер в одиночку хуже поиска на первом месте (83% против 89%), а слияние — 89% и
+        # лучше в топ-3 на демо-сценариях. Оценка реранкера — для уверенности и «не найдено».
+        by_margin = sorted(range(len(top)), key=lambda i: -margins[i])
+        rerank_pos = {index: place for place, index in enumerate(by_margin, start=1)}
+        order = sorted(
+            range(len(top)), key=lambda i: -(1 / (61 + i) + 1 / (60 + rerank_pos[i]))
+        )
+        return [(top[i], 1 / (1 + math.exp(-margins[i]))) for i in order]
 
     def _select_family(self, state: State, hits: list[FamilyHit]) -> None:
         """Реранкер → (уверен: сразу) → LLM-1 по его топу; без LLM — по реранкеру/поиску."""
@@ -334,7 +346,7 @@ class Pipeline:
                 except Exception as error:  # noqa: BLE001
                     logger.warning("LLM-1 недоступна: %s", error)
                     state.llm_note = _llm_note(error)
-            if p1 < 0.05:
+            if max(prob for _, prob in ranked) < 0.27:
                 state.selection = {
                     "not_found": True,
                     "mode": "reranker",
