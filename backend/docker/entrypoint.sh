@@ -20,9 +20,15 @@ if [ "${SEED_CATALOG:-0}" = "1" ]; then
 fi
 
 echo "Starting gunicorn on :8000…"
+# Один воркер с потоками, а не несколько процессов: эмбеддер занимает 1–2 ГБ памяти в каждом
+# процессе, а запрос большую часть времени ждёт ответа LLM по сети — потоки здесь дешевле.
+# Таймаут — с запасом на два вызова LLM на бесплатном тарифе.
 exec gunicorn config.wsgi:application \
+  --config /app/gunicorn.conf.py \
   --bind 0.0.0.0:8000 \
-  --workers "${GUNICORN_WORKERS:-3}" \
-  --timeout "${GUNICORN_TIMEOUT:-60}" \
+  --workers "${GUNICORN_WORKERS:-1}" \
+  --threads "${GUNICORN_THREADS:-8}" \
+  --worker-class gthread \
+  --timeout "${GUNICORN_TIMEOUT:-180}" \
   --access-logfile - \
   --error-logfile -

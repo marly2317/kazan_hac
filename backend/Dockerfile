@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1
-
 FROM python:3.13-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -29,42 +27,42 @@ RUN python -m pip install --upgrade pip \
       "whitenoise==6.12.0" \
       "symspellpy==6.10.0" \
       "httpx==0.28.1" \
-      "opensearch-py==2.8.0"
+      "lxml==6.1.3" \
+      "snowballstemmer==3.1.1" \
+      "jsonschema==4.26.0" \
+      "numpy==2.5.3"
 
-# Энкодер отдельным слоем, и `torch` — из индекса CPU-колёс. Обычный `pip install torch`
-# притащил бы сборку с CUDA: несколько гигабайт ради вычислений на GPU, которого на стенде
-# нет. Слой идёт после прикладных зависимостей, поэтому правка версии Django его не
-# пересобирает, а пересобирать его дороже всего остального в образе вместе.
-RUN python -m pip install --index-url https://download.pytorch.org/whl/cpu "torch==2.6.0" \
- && python -m pip install "sentence-transformers==3.4.1"
+# Эмбеддер отдельным слоем, и `torch` — из индекса CPU-колёс. Обычный `pip install torch`
+# притащил бы сборку с CUDA: несколько гигабайт ради вычислений на GPU, которого в контейнере
+# нет. Слой идёт после прикладных зависимостей: правка версии Django его не пересобирает.
+RUN python -m pip install --index-url https://download.pytorch.org/whl/cpu "torch==2.14.1" \
+ && python -m pip install "sentence-transformers==6.1.0"
 
-# Модель вшивается в образ, а не скачивается при первом запросе — почему, написано в самом
-# скрипте. rubert-tiny2: 29 млн параметров, 312 измерений, ~120 МБ — то самое «предпочтение
-# лёгким и быстрым» из условий хакатона, и на CPU это единицы миллисекунд на запрос.
-ARG EMBEDDING_MODEL=cointegrated/rubert-tiny2
-ENV EMBEDDING_MODEL_PATH=/opt/models/encoder
+# Эмбеддер вшивается в образ, а не скачивается при первом запросе: на защите сети может не
+# оказаться в самый неподходящий момент. Qwen3-Embedding-0.6B (архитектура §5): 0,6 млрд
+# параметров, 1024 измерения, сильный на русском; на CPU — десятки миллисекунд на запрос.
+# Векторы карточек семейств посчитаны заранее и лежат в kb/ — в работе кодируется только запрос.
+ARG EMBEDDING_MODEL=Qwen/Qwen3-Embedding-0.6B
+ENV STE_EMBEDDER_PATH=/opt/models/qwen3-embedding-0.6b
 COPY docker/fetch_encoder.py /tmp/fetch_encoder.py
-RUN python /tmp/fetch_encoder.py "$EMBEDDING_MODEL" "$EMBEDDING_MODEL_PATH" \
+RUN python /tmp/fetch_encoder.py "$EMBEDDING_MODEL" "$STE_EMBEDDER_PATH" \
  && rm /tmp/fetch_encoder.py \
  && chmod -R a+rX /opt/models
 
 # Dev tooling, off by default. The production image stays free of a test runner and a linter;
 # the development stack turns this on so `pytest` and `ruff` can be run inside the same
 # container that serves the app, against the same Python and the same installed versions.
-# Without it the checks in the README could not be run at all: the published image has no
-# pytest, and `docker compose exec backend pytest` fails with "executable file not found".
 ARG INSTALL_DEV=0
 RUN if [ "$INSTALL_DEV" = "1" ]; then \
-      python -m pip install "ruff==0.16.10" "pytest==9.1.1" "pytest-django==4.14.0"; \
+      python -m pip install "ruff==0.16.10" "pytest==9.1.1" "pytest-django==4.14.0" "openpyxl==3.1.5"; \
     fi
 
 COPY . .
 
-# Non-root: the process only needs to read the code and write staticfiles. The home directory
-# is real because gunicorn's control server writes under $HOME; with the default `/nonexistent`
-# it logs a permission error on every boot.
+# Non-root: the process only needs to read the code and write staticfiles and the LLM cache.
+# The home directory is real because gunicorn's control server writes under $HOME.
 RUN adduser --system --group --home /home/app app \
- && mkdir -p /app/staticfiles /home/app \
+ && mkdir -p /app/staticfiles /app/var/llm_cache /home/app \
  && chown -R app:app /app /home/app
 ENV HOME=/home/app
 USER app

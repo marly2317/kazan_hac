@@ -8,7 +8,7 @@
 скачиваемая при первом запросе, — это отказ в самый неподходящий момент: поиск работает на
 машине разработчика и не работает на защите.
 
-    python docker/fetch_encoder.py cointegrated/rubert-tiny2 /opt/models/encoder
+    python docker/fetch_encoder.py Qwen/Qwen3-Embedding-0.6B /opt/models/qwen3-embedding-0.6b
 """
 
 from __future__ import annotations

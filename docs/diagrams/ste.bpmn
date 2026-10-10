@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Подбор кода КТРУ и автозаполнение характеристик СТЕ — схема реализации в нотации BPMN 2.0
+  (архитектура materials/ARCHITECTURE_KTRU_ML.md, код backend/apps/ste).
+
+  Открывается в bpmn.io / Camunda Modeler; координаты заданы, раскладка не нужна.
+  Соответствие задач коду:
+    t_typo      apps/ste/application/typos.py
+    t_preview   apps/ste/application/retrieval.py (BM25 + Qwen3-Embedding, RRF)
+    g_fast      apps/ste/application/pipeline.py  Pipeline._fast_path
+    t_llm1      apps/ste/application/llm_steps.py select_family
+    t_llm2      apps/ste/application/llm_steps.py extract_values
+    t_norm      apps/ste/domain/normalize.py
+    t_check     apps/ste/domain/signals.py
+    t_narrow    apps/ste/domain/narrowing.py
+    t_question  apps/ste/domain/questions.py choose_question
+    t_conflict  apps/ste/domain/narrowing.py (conflict) + signals.conflict_signal
+    t_fill      apps/ste/domain/questions.py fill_lists
+    t_card      apps/ste/domain/card.py
+-->
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             id="ste_definitions"
+             targetNamespace="http://tenderhack.kazan/ste">
+  <process id="ste" name="Подбор кода КТРУ и автозаполнение характеристик СТЕ" isExecutable="false">
+    <startEvent id="start" name="Поставщик ввёл описание товара" />
+    <serviceTask id="t_typo" name="Исправить опечатки и раскладку по словарю КТРУ" />
+    <serviceTask id="t_preview" name="Предпросмотр: BM25 + эмбеддинги, топ семейств КТРУ" />
+    <exclusiveGateway id="g_fast" name="Поиск однозначен?" />
+    <serviceTask id="t_llm1" name="LLM-1: выбрать семейство КТРУ из кандидатов" />
+    <exclusiveGateway id="g_found" name="Семейство найдено?" />
+    <endEvent id="e_notfound" name="Не найдено: уточнить товар, показать похожие" />
+    <serviceTask id="t_llm2" name="LLM-2: разложить текст по схеме семейства (enum, цитата)" />
+    <serviceTask id="t_norm" name="Проверить цитаты, распознать единицы, перевести в ОКЕИ" />
+    <serviceTask id="t_check" name="Проверить значения по КТРУ: интервал, перечень, единица" />
+    <serviceTask id="t_narrow" name="Сузить конечные позиции семейства" />
+    <exclusiveGateway id="g_count" name="Сколько позиций осталось?" />
+    <serviceTask id="t_question" name="Выбрать вопрос по самой информативной характеристике" />
+    <userTask id="u_answer" name="Ответить кнопкой или текстом" />
+    <serviceTask id="t_conflict" name="Конфликт: найти значение-виновник и ближайшее допустимое" />
+    <userTask id="u_fix" name="Исправить значение" />
+    <serviceTask id="t_fill" name="Дозаполнить по КТРУ, список обязательных" />
+    <serviceTask id="t_card" name="Собрать карточку СТЕ и сигналы ошибок" />
+    <endEvent id="e_done" name="Код КТРУ определён" />
+
+    <sequenceFlow id="f1" sourceRef="start" targetRef="t_typo" />
+    <sequenceFlow id="f2" sourceRef="t_typo" targetRef="t_preview" />
+    <sequenceFlow id="f3" sourceRef="t_preview" targetRef="g_fast" />
+    <sequenceFlow id="f4" name="нет" sourceRef="g_fast" targetRef="t_llm1" />
+    <sequenceFlow id="f5" name="да" sourceRef="g_fast" targetRef="t_llm2" />
+    <sequenceFlow id="f6" sourceRef="t_llm1" targetRef="g_found" />
+    <sequenceFlow id="f7" name="нет" sourceRef="g_found" targetRef="e_notfound" />
+    <sequenceFlow id="f8" name="да" sourceRef="g_found" targetRef="t_llm2" />
+    <sequenceFlow id="f9" sourceRef="t_llm2" targetRef="t_norm" />
+    <sequenceFlow id="f10" sourceRef="t_norm" targetRef="t_check" />
+    <sequenceFlow id="f11" sourceRef="t_check" targetRef="t_narrow" />
+    <sequenceFlow id="f12" sourceRef="t_narrow" targetRef="g_count" />
+    <sequenceFlow id="f13" name="одна" sourceRef="g_count" targetRef="t_fill" />
+    <sequenceFlow id="f14" name="несколько" sourceRef="g_count" targetRef="t_question" />
+    <sequenceFlow id="f15" name="ни одной" sourceRef="g_count" targetRef="t_conflict" />
+    <sequenceFlow id="f16" sourceRef="t_question" targetRef="u_answer" />
+    <sequenceFlow id="f17" name="без LLM" sourceRef="u_answer" targetRef="t_narrow" />
+    <sequenceFlow id="f18" sourceRef="t_conflict" targetRef="u_fix" />
+    <sequenceFlow id="f19" sourceRef="u_fix" targetRef="t_norm" />
+    <sequenceFlow id="f20" sourceRef="t_fill" targetRef="t_card" />
+    <sequenceFlow id="f21" sourceRef="t_card" targetRef="e_done" />
+  </process>
+
+  <bpmndi:BPMNDiagram id="ste_diagram">
+    <bpmndi:BPMNPlane id="ste_plane" bpmnElement="ste">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start"><dc:Bounds x="40" y="222" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="t_typo_di" bpmnElement="t_typo"><dc:Bounds x="120" y="200" width="140" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="t_preview_di" bpmnElement="t_preview"><dc:Bounds x="300" y="200" width="140" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="g_fast_di" bpmnElement="g_fast" isMarkerVisible="true"><dc:Bounds x="480" y="215" width="50" height="50" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="t_llm1_di" bpmnElement="t_llm1"><dc:Bounds x="580" y="200" width="140" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="g_found_di" bpmnElement="g_found" isMarkerVisible="true"><dc:Bounds x="770" y="215" width="50" height="50" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e_notfound_di" bpmnElement="e_notfound"><dc:Bounds x="777" y="360" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="t_llm2_di" bpmnElement="t_llm2"><dc:Bounds x="870" y="200" width="140" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="t_norm_di" bpmnElement="t_norm"><dc:Bounds x="1050" y="200" width="140" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="t_check_di" bpmnElement="t_check"><dc:Bounds x="1230" y="200" width="140" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="t_narrow_di" bpmnElement="t_narrow"><dc:Bounds x="1410" y="200" width="140" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="g_count_di" bpmnElement="g_count" isMarkerVisible="true"><dc:Bounds x="1600" y="215" width="50" height="50" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="t_fill_di" bpmnElement="t_fill"><dc:Bounds x="1710" y="200" width="140" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="t_card_di" bpmnElement="t_card"><dc:Bounds x="1890" y="200" width="140" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e_done_di" bpmnElement="e_done"><dc:Bounds x="2072" y="222" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="t_question_di" bpmnElement="t_question"><dc:Bounds x="1555" y="340" width="140" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="u_answer_di" bpmnElement="u_answer"><dc:Bounds x="1555" y="470" width="140" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="t_conflict_di" bpmnElement="t_conflict"><dc:Bounds x="1555" y="40" width="140" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="u_fix_di" bpmnElement="u_fix"><dc:Bounds x="1230" y="40" width="140" height="80" /></bpmndi:BPMNShape>
+
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1"><di:waypoint x="76" y="240" /><di:waypoint x="120" y="240" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2"><di:waypoint x="260" y="240" /><di:waypoint x="300" y="240" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3"><di:waypoint x="440" y="240" /><di:waypoint x="480" y="240" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f4_di" bpmnElement="f4"><di:waypoint x="530" y="240" /><di:waypoint x="580" y="240" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f5_di" bpmnElement="f5"><di:waypoint x="505" y="215" /><di:waypoint x="505" y="170" /><di:waypoint x="940" y="170" /><di:waypoint x="940" y="200" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f6_di" bpmnElement="f6"><di:waypoint x="720" y="240" /><di:waypoint x="770" y="240" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f7_di" bpmnElement="f7"><di:waypoint x="795" y="265" /><di:waypoint x="795" y="360" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f8_di" bpmnElement="f8"><di:waypoint x="820" y="240" /><di:waypoint x="870" y="240" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f9_di" bpmnElement="f9"><di:waypoint x="1010" y="240" /><di:waypoint x="1050" y="240" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f10_di" bpmnElement="f10"><di:waypoint x="1190" y="240" /><di:waypoint x="1230" y="240" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f11_di" bpmnElement="f11"><di:waypoint x="1370" y="240" /><di:waypoint x="1410" y="240" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f12_di" bpmnElement="f12"><di:waypoint x="1550" y="240" /><di:waypoint x="1600" y="240" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f13_di" bpmnElement="f13"><di:waypoint x="1650" y="240" /><di:waypoint x="1710" y="240" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f14_di" bpmnElement="f14"><di:waypoint x="1625" y="265" /><di:waypoint x="1625" y="340" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f15_di" bpmnElement="f15"><di:waypoint x="1625" y="215" /><di:waypoint x="1625" y="120" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f16_di" bpmnElement="f16"><di:waypoint x="1625" y="420" /><di:waypoint x="1625" y="470" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f17_di" bpmnElement="f17"><di:waypoint x="1555" y="510" /><di:waypoint x="1480" y="510" /><di:waypoint x="1480" y="280" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f18_di" bpmnElement="f18"><di:waypoint x="1555" y="80" /><di:waypoint x="1370" y="80" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f19_di" bpmnElement="f19"><di:waypoint x="1230" y="80" /><di:waypoint x="1120" y="80" /><di:waypoint x="1120" y="200" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f20_di" bpmnElement="f20"><di:waypoint x="1850" y="240" /><di:waypoint x="1890" y="240" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f21_di" bpmnElement="f21"><di:waypoint x="2030" y="240" /><di:waypoint x="2072" y="240" /></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>

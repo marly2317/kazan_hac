@@ -29,53 +29,6 @@ services:
       retries: 10
       start_period: 15s
 
-  # Поисковый движок. Отдельный контейнер появился не ради «там всё для поиска», а ради двух
-  # вещей, которых из Postgres выжать не удалось (замеры — docs/SEARCH_CHOICE.md): полнота
-  # отбора и ранжирование **по индексу** одновременно, плюс kNN по вектору рядом с лексикой в
-  # одном запросе.
-  #
-  # Порт наружу не публикуется: движок — производный индекс, источник истины остаётся в
-  # Postgres, и доступ к нему нужен только бэкенду по внутренней сети.
-  opensearch:
-    image: opensearchproject/opensearch:2.19.1
-    restart: unless-stopped
-    environment:
-      # Один узел: реплик нет, кворума нет, «yellow» для такого кластера — нормальное
-      # состояние, а не неполадка.
-      discovery.type: single-node
-      # Демонстрационный security-плагин выключен вместе со своим самоподписанным
-      # сертификатом и паролем по умолчанию. Включать его здесь было бы хуже, чем не включать:
-      # движок не публикует порт, а демо-конфиг создаёт впечатление защиты, которой нет.
-      DISABLE_SECURITY_PLUGIN: 'true'
-      DISABLE_INSTALL_DEMO_CONFIG: 'true'
-      # Куча фиксированного размера. 512 МБ хватает на справочник категорий хакатона с
-      # запасом; Lucene и HNSW живут вне кучи, в отображённых файлах, и этот предел их не
-      # ограничивает.
-      OPENSEARCH_JAVA_OPTS: ${OPENSEARCH_JAVA_OPTS:--Xms512m -Xmx512m}
-      bootstrap.memory_lock: 'true'
-    ulimits:
-      # Куча, выгруженная в swap, стоит дороже, чем куча поменьше, — отсюда memory_lock.
-      memlock:
-        soft: -1
-        hard: -1
-      nofile:
-        soft: 65536
-        hard: 65536
-    volumes:
-      - opensearch-data:/usr/share/opensearch/data
-    healthcheck:
-      # Именно `yellow`: у единственного узла реплики разместить некуда, поэтому до `green`
-      # кластер не дойдёт никогда и ожидание его было бы ожиданием вечности.
-      test:
-        [
-          'CMD-SHELL',
-          'curl -fsS "http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s" || exit 1',
-        ]
-      interval: 10s
-      timeout: 10s
-      retries: 10
-      start_period: 60s
-
   backend:
     build:
       context: ../backend
@@ -98,36 +51,36 @@ services:
       CSRF_COOKIE_SECURE: ${CSRF_COOKIE_SECURE:-0}
       SEED_DEMO_USER: ${SEED_DEMO_USER:-0}
       SEED_CATALOG: ${SEED_CATALOG:-0}
-      # Сбор наблюдений о нехватке в справочнике — необязательная возможность, см. .env.example.
-      COLLECT_REFERENCE_GAPS: ${COLLECT_REFERENCE_GAPS:-1}
-      # Empty by default: the rules forbid proprietary LLM APIs, so nothing is configured
-      # until an open model is pointed at. See infra/.env.example.
-      LLM_BASE_URL: ${LLM_BASE_URL:-}
-      LLM_MODEL: ${LLM_MODEL:-}
-      LLM_API_KEY: ${LLM_API_KEY:-}
-      LLM_TIMEOUT: ${LLM_TIMEOUT:-4.0}
+      # Исправление опечаток в демо-каталоге (модуль spellcheck): стадия LLM выключена.
+      LLM_BASE_URL: ''
       CACHE_URL: ${CACHE_URL:-locmemcache://spellcheck?timeout=604800&max_entries=10000}
-      # Пустая строка — и поиск возвращается на Postgres: это не «аварийный режим», а
-      # способ сравнить два движка на одном стенде, которым пользуется bench_retrieval.
-      OPENSEARCH_URL: ${OPENSEARCH_URL-http://opensearch:9200}
-      OPENSEARCH_INDEX_PREFIX: ${OPENSEARCH_INDEX_PREFIX:-ktru}
-      OPENSEARCH_TIMEOUT: ${OPENSEARCH_TIMEOUT:-5.0}
-      # Энкодер вшит в образ (см. backend/Dockerfile): на стенде хакатона сети может не быть,
-      # а модель, скачиваемая при первом запросе, — это отказ в самый неподходящий момент.
-      EMBEDDING_MODEL_PATH: ${EMBEDDING_MODEL_PATH:-/opt/models/encoder}
-      EMBEDDING_ENABLED: ${EMBEDDING_ENABLED:-1}
-      GUNICORN_WORKERS: ${GUNICORN_WORKERS:-3}
+      # --- подбор КТРУ (apps/ste), см. infra/.env.example ---
+      # Открытая модель через OpenAI-совместимый роутер или локальный Ollama/vLLM.
+      STE_LLM_BASE_URL: ${STE_LLM_BASE_URL:-https://openrouter.ai/api/v1}
+      STE_LLM_API_KEY: ${STE_LLM_API_KEY:-}
+      STE_LLM_MODEL: ${STE_LLM_MODEL:-google/gemma-4-26b-a4b-it:free}
+      STE_LLM_FALLBACK_MODELS: ${STE_LLM_FALLBACK_MODELS:-google/gemma-4-31b-it:free}
+      STE_LLM_STRUCTURED: ${STE_LLM_STRUCTURED:-prompt}
+      STE_LLM_MIN_INTERVAL: ${STE_LLM_MIN_INTERVAL:-3.1}
+      STE_LLM_CACHE_DIR: /app/var/llm_cache
+      STE_EMBEDDER_ENABLED: ${STE_EMBEDDER_ENABLED:-1}
+      STE_FAMILY_SELECT_MODE: ${STE_FAMILY_SELECT_MODE:-top_k}
+      STE_FAST_PATH: ${STE_FAST_PATH:-1}
+      GUNICORN_WORKERS: ${GUNICORN_WORKERS:-1}
+      GUNICORN_THREADS: ${GUNICORN_THREADS:-8}
     depends_on:
       postgres:
-        condition: service_healthy
-      opensearch:
         condition: service_healthy
     healthcheck:
       test: ['CMD-SHELL', 'curl -fsS http://localhost:8000/healthz || exit 1']
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 40s
+      # Первый старт прогревает базу знаний и эмбеддер (~10–20 с).
+      start_period: 60s
+    volumes:
+      # Кэш ответов LLM: повтор того же описания — мгновенно и без расхода лимита запросов.
+      - ste-llm-cache:/app/var/llm_cache
 
   frontend:
     build:
@@ -161,4 +114,4 @@ services:
 
 volumes:
   postgres-data:
-  opensearch-data:
+  ste-llm-cache:

@@ -22,3 +22,6 @@ infra/.env
 .idea/
 .vscode/
 .secrets/
+
+# ste: кэш ответов LLM и прочее локальное
+backend/var/

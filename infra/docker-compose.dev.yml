@@ -9,8 +9,8 @@
 # 2. the source tree is bind-mounted over `/app`, so an edit is visible without a rebuild.
 #    The production image deliberately copies the code in instead — a container whose
 #    behaviour depends on the host filesystem is not a deployable artefact;
-# 3. the КТРУ archives are mounted read-only at /data/ktru, which is where the documented
-#    `import_ktru` command looks for them. Point `KTRU_DIR` at the organisers' folder.
+# 3. the КТРУ archives are mounted read-only at /data/ktru, where `build_ste_kb` can rebuild the
+#    knowledge base from them. Point `KTRU_DIR` at the organisers' folder (materials/КТРУ).
 #
 # The mount shadows `/app`, including the virtualenv-free site-packages — those live outside
 # `/app`, so they survive it. `staticfiles` is given its own volume for the same reason: it is
@@ -23,10 +23,10 @@ services:
     volumes:
       - ../backend:/app
       - backend-staticfiles:/app/staticfiles
-      # Архивы КТРУ там, где их ждёт документированная команда импорта. Монтируются только в
-      # стеке разработки и только для чтения: боевому образу исходный XML не нужен — он
-      # работает с уже загруженным справочником.
-      - ${KTRU_DIR:-./ktru}:/data/ktru:ro
+      # Архивы КТРУ для пересборки базы знаний (`manage.py build_ste_kb /data/ktru`). Только в
+      # стеке разработки и только для чтения: боевому образу XML не нужен — база знаний уже
+      # собрана и лежит в backend/kb.
+      - ${KTRU_DIR:-../materials/КТРУ}:/data/ktru:ro
 
 volumes:
   backend-staticfiles:
