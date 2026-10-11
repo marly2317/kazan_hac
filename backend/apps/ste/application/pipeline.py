@@ -660,6 +660,13 @@ class Pipeline:
         if family is not None and state.selection.get("mode") != "multiple":
             signals += T.contradiction_signals(state.text, family)
             signals += T.unit_signals(state.text, family)
+            signals += self._absent_in_leaf_signals(state, family, result.get("final_code"))
+            signals += T.foreign_characteristic_signals(
+                state.text,
+                family,
+                self.kb,
+                [item["name"] for item in self._typical_extra(family.id)],
+            )
             typical = result.get("typical_extra") or {}
             if typical.get("ste", 0) >= 30:
                 for item in typical.get("ours", []):
@@ -691,6 +698,41 @@ class Pipeline:
             or signal.type != SignalType.CONTRADICTION
         ]
         return ResultBuilder._signals_json(fresh)
+
+    def _absent_in_leaf_signals(self, state: State, family: Family, code: str | None) -> list:
+        """«Сетевая дрель, аккумулятор 4 Ач»: код выбран (сетевой), а в тексте есть значение
+        характеристики, которой у этого кода нет (ёмкость аккумулятора), — сказать об этом,
+        а не потерять молча."""
+        from apps.ste.domain.model import Severity, Signal, SignalType
+
+        leaf = self.kb.leaves.get(code or "")
+        if leaf is None:
+            return []
+        out = []
+        for key, data in state.values.get(family.id, {}).items():
+            nv = _nv_from(data)
+            if key in leaf.chars or nv.confidence not in (
+                Confidence.CONFIDENT,
+                Confidence.CONFIRMED,
+            ):
+                continue
+            if nv.source == Source.KTRU:
+                continue
+            out.append(
+                Signal(
+                    type=SignalType.IRRELEVANT,
+                    severity=Severity.WARNING,
+                    message=f"«{nv.char_name}: {nv.user_text}» — у выбранной позиции "
+                    f"{leaf.code} такой характеристики нет: описание противоречит само себе "
+                    "или указан не тот товар.",
+                    suggestion="Проверьте описание: возможно, нужен другой вариант товара.",
+                    char=nv.char_name,
+                    char_key=key,
+                    user_value=nv.user_text,
+                    family_id=family.id,
+                )
+            )
+        return out
 
     def _nearest_generic(self, text: str, k: int = 5) -> list[Family]:
         """Общие позиции для LLM-1 — только ближайшие по поиску, а не все 81 (~5 тыс. токенов)."""

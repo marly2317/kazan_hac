@@ -226,3 +226,57 @@ def unit_signals(text: str, family: Family) -> list[Signal]:
                     )
                 )
     return out
+
+
+# --- характеристики чужих товаров --------------------------------------------------------------
+
+#: Слова названий характеристик, которые сами по себе ничего не называют.
+_GENERIC_NAME = frozenset(
+    _stem(word)
+    for word in ("количество", "наличие", "тип", "вид", "общий", "основной", "максимальный")
+)
+_FOREIGN_INDEX: dict[int, list[tuple[str, set[str], set[str]]]] = {}
+
+
+def _foreign_index(kb: KnowledgeBase) -> list[tuple[str, set[str], set[str]]]:
+    """(название, его значимые основы, семейства, где оно есть) — по всем характеристикам КТРУ."""
+    index = _FOREIGN_INDEX.get(id(kb))
+    if index is None:
+        by_name: dict[str, tuple[set[str], set[str]]] = {}
+        for family in kb.families.values():
+            for char in family.chars.values():
+                words = stems(char.name) - _GENERIC_NAME
+                if len(words) >= 2:  # «Длина» есть у всех; «Длина кабеля» — уже конкретно
+                    by_name.setdefault(char.name, (words, set()))[1].add(family.id)
+        index = [(name, words, families) for name, (words, families) in by_name.items()]
+        _FOREIGN_INDEX[id(kb)] = index
+    return index
+
+
+def foreign_characteristic_signals(
+    text: str, family: Family, kb: KnowledgeBase, typical_names: list[str]
+) -> list[Signal]:
+    """«Сабельная пила, российский размер одежды 52»: названа характеристика, которая в КТРУ
+    есть только у других товаров (одежды), а у этого — ни в КТРУ, ни в реальных СТЕ."""
+    from apps.ste.domain.extra_filter import same_name
+
+    query = stems(text)
+    own = [char.name for char in family.chars.values()] + list(typical_names)
+    out = []
+    for name, words, families in _foreign_index(kb):
+        if family.id in families or not words <= query:
+            continue
+        if any(same_name(name, mine) or words <= stems(mine) for mine in own):
+            continue
+        out.append(
+            Signal(
+                type=SignalType.IRRELEVANT,
+                severity=Severity.WARNING,
+                message=f"В описании указана «{name}» — такая характеристика бывает у других "
+                f"товаров, а у «{family.name}» её нет ни в КТРУ, ни в реальных СТЕ.",
+                suggestion="Проверьте, относится ли это к товару; если нет — уберите из описания.",
+                char=name,
+                family_id=family.id,
+            )
+        )
+    return out[:3]
