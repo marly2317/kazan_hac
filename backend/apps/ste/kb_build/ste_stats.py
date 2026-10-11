@@ -24,6 +24,7 @@ import re
 import sys
 import time
 from collections import Counter, defaultdict
+from functools import lru_cache
 from pathlib import Path
 
 from apps.ste.domain.extra_filter import same_name
@@ -55,12 +56,14 @@ def split_characteristics(raw: str, names: list[str]) -> list[tuple[str, str]]:
     слова с заглавной буквы, цифры или скобки — с них в выгрузке начинается значение. Если
     такого слова нет («Цвет темно-синий»), остаётся словарное название.
     """
+    index = _name_index(tuple(names))
     pairs = []
     for segment in (part.strip() for part in (raw or "").split("|")):
         if not segment:
             continue
         folded = fold_text(segment)
-        for name in names:
+        first = folded.split(" ", 1)[0]
+        for name in index.get(first, ()):
             key = fold_text(name)
             if not (folded.startswith(key + " ") and len(segment) > len(name) + 1):
                 continue
@@ -80,6 +83,15 @@ def split_characteristics(raw: str, names: list[str]) -> list[tuple[str, str]]:
             pairs.append((name, " ".join(words)))
             break
     return pairs
+
+
+@lru_cache(maxsize=4)
+def _name_index(names: tuple[str, ...]) -> dict[str, list[str]]:
+    """Первое слово → словарные названия с него (длинные раньше): не перебирать все 1585."""
+    index: dict[str, list[str]] = defaultdict(list)
+    for name in names:
+        index[fold_text(name).split(" ", 1)[0]].append(name)
+    return dict(index)
 
 
 _ZEROS = re.compile(r"(\d+)[.,]0+\b")
