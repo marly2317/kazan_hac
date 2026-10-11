@@ -99,7 +99,7 @@ def fake_llm(monkeypatch, kb):
         grinder = kb.families[GRINDER]
         return SelectionResult([(grinder.short_id, 0.95, "болгарка — шлифмашина")], False, None)
 
-    def extract(client, text, family):
+    def extract(client, text, family, extra_hints=None):
         calls["extract"] += 1
         values = {key: ExtractedValue(char_key=key, status=Status.ABSENT) for key in family.chars}
         if family.id == GRINDER and "болгарка" in text:

@@ -529,7 +529,23 @@ class Pipeline:
             features = self._confidence(hits, state.text)
             # Все слова названия лидера есть в запросе («шкаф для одежды деревянный») — тип
             # товара назван прямо, переспрашивать незачем.
-            if features.get("strong") or (features.get("name_overlap") or 0) >= 1.0:
+            overlap = features.get("name_overlap") or 0
+            if (
+                len(hits) == 1
+                and overlap == 0
+                and not features.get("strong")
+                and not self._synonym_named(state.text, hits[0].family_id)
+            ):
+                # Единственный кандидат, ни одного слова его названия в запросе («Отвертка
+                # крестовая» → «Кресло офисное» через синоним «крестовина»): без LLM это не
+                # решение, а совпадение основ — честнее сказать, что тип не распознан.
+                state.selection = {
+                    "not_found": True,
+                    "mode": "fallback",
+                    "reason": "Тип товара не распознан уверенно — уточните описание",
+                }
+                return
+            if features.get("strong") or overlap >= 1.0:
                 state.candidates = [
                     asdict(FamilyChoice(top.family_id, 0.8, "лучшее совпадение поиска"))
                 ]
@@ -544,6 +560,21 @@ class Pipeline:
                 "mode": "fallback",
                 "reason": "Поиск не нашёл похожих семейств КТРУ",
             }
+
+    def _synonym_named(self, text: str, family_id: str) -> bool:
+        """Назван ли тип синонимом целиком: «болгарка» — да, «крестовая» ≠ «крестовина».
+
+        Поиск сравнивает обрезанные основы («крестов»), поэтому совпадение бывает случайным;
+        здесь — полные основы Snowball.
+        """
+        from apps.ste.application.retrieval import analyze
+
+        family = self.kb.families.get(family_id)
+        if family is None:
+            return False
+        query = set(analyze(text, None))
+        words = set(analyze(" ".join((*family.synonyms, *family.keywords, family.name)), None))
+        return bool(query & words)
 
     def _nearest_generic(self, text: str, k: int = 5) -> list[Family]:
         """Общие позиции для LLM-1 — только ближайшие по поиску, а не все 81 (~5 тыс. токенов)."""
@@ -725,9 +756,7 @@ class Pipeline:
         try:
             llm = self._llm(state, f"LLM-2 · характеристики «{family.name}»")
             hints = [item["name"] for item in self._typical_extra(family_id)]
-            if hints:
-                return extract_values(llm, state.text, family, hints)
-            return extract_values(llm, state.text, family)
+            return extract_values(llm, state.text, family, hints or None)
         except Exception as error:  # noqa: BLE001
             return error
 
