@@ -27,6 +27,7 @@ from collections import Counter, defaultdict
 from functools import lru_cache
 from pathlib import Path
 
+from apps.ste.application.retrieval import _stem, fold
 from apps.ste.domain.extra_filter import same_name
 from apps.ste.domain.values import fold_text
 
@@ -41,7 +42,9 @@ TOP_VALUES = 5
 #: Не свойства товара для карточки: упаковка, учётные поля, вес «0.00000».
 _SKIP_NAME = re.compile(
     r"упаковк|бренд|производител|модел|артикул|серия|страна|штрих|код|гарант|срок|"
-    r"торгов|марка|поставщ|ндс|цена|наименован",
+    r"торгов|марка|поставщ|ндс|цена|наименован|"
+    # Классификаторы портала («Вид продукции: Товары»), а не свойства товара.
+    r"вид продукц|вид товар|^виды ",
     re.IGNORECASE,
 )
 _EMPTY_VALUE = re.compile(r"^\(?не задано\)?|^0(?:[.,]0+)?(?:\s|$)", re.IGNORECASE)
@@ -179,11 +182,10 @@ def _confident_family(title: str, kb, retriever):
     family = kb.families.get(hits[0].family_id)
     if family is None or family.role != "family":
         return None
-    title_stems = {fold_text(word)[:5] for word in re.findall(r"[а-яёa-z]+", title.casefold())}
+    # Полные основы Snowball, а не первые буквы: иначе «Электроды» = «Электролобзик» («элект»).
+    title_stems = {_stem(word) for word in re.findall(r"[а-я]+", fold(title))}
     name_stems = {
-        fold_text(word)[:5]
-        for word in re.findall(r"[а-яёa-z]+", family.name.casefold())
-        if len(word) >= 3
+        _stem(word) for word in re.findall(r"[а-я]+", fold(family.name)) if len(word) >= 3
     }
     return family if name_stems and name_stems <= title_stems else None
 
