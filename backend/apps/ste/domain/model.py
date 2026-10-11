@@ -69,6 +69,9 @@ class SignalType(StrEnum):
     NOT_FOUND = "NOT_FOUND"  # тип товара не определён
     QUOTE_NOT_FOUND = "QUOTE_NOT_FOUND"  # служебный: цитата модели не найдена в тексте
     NOTICE = "NOTICE"  # служебное уведомление: LLM недоступна, подбор выполнен правилами
+    NEGATIVE_VALUE = "NEGATIVE_VALUE"  # отрицательное значение величины («высота -750 мм»)
+    MULTIPLE_PRODUCTS = "MULTIPLE_PRODUCTS"  # в одной позиции несколько товаров
+    IRRELEVANT = "IRRELEVANT"  # характеристика нетипична для этого товара
 
 
 class Severity(StrEnum):

@@ -230,6 +230,11 @@ class Pipeline:
         state.preview = [self._hit_json(hit) for hit in hits[:5]]
         state.timings["preview"] = _ms(start)
 
+        if self._multiple_products(state, hits):
+            # Несколько товаров в одной позиции: сначала пользователь выбирает, какой оформляем;
+            # извлекать характеристики сразу для всех — лишние вызовы LLM.
+            return self._finish(state, session_id, total)
+
         self._select_family(state, hits)
 
         start = time.perf_counter()
@@ -608,6 +613,84 @@ class Pipeline:
         query = set(analyze(text, None))
         words = set(analyze(" ".join((*family.synonyms, *family.keywords, family.name)), None))
         return bool(query & words)
+
+    def _multiple_products(self, state: State, hits: list[FamilyHit]) -> bool:
+        """«Стол и стул в одной позиции» → вопрос «какой товар оформляем» + ошибка."""
+        from apps.ste.application.text_checks import named_families
+
+        ids = [hit.family_id for hit in hits]
+        try:
+            ids += [hit.family_id for hit in self.deps.retriever.search(state.text, k=30)]
+        except Exception:  # noqa: BLE001 — проверка необязательна
+            pass
+        named = named_families(state.text, self.kb, ids)
+        if not named:
+            return False
+        state.candidates = [
+            asdict(FamilyChoice(family.id, 0.5, "назван в описании")) for family in named[:5]
+        ]
+        state.selection = {
+            "not_found": False,
+            "mode": "multiple",
+            "reason": "в описании несколько товаров",
+        }
+        self._step(
+            state,
+            "Проверка: несколько товаров",
+            "правила (без нейросети)",
+            0,
+            "названы: " + ", ".join(family.name for family in named),
+        )
+        return True
+
+    def _text_signals(self, state: State, result: dict) -> list[dict]:
+        """Проверки описания целиком: минус, несколько товаров, противоречия, нетипичное."""
+        from apps.ste.application import text_checks as T
+        from apps.ste.domain.model import Severity, Signal, SignalType
+
+        signals = T.negative_value_signals(state.text)
+        if state.selection.get("mode") == "multiple":
+            families = [
+                self.kb.families[choice["family_id"]]
+                for choice in state.candidates
+                if choice["family_id"] in self.kb.families
+            ]
+            signals.append(T.multiple_products_signal(families))
+        family = self.kb.families.get((result.get("family") or {}).get("id", ""))
+        if family is not None and state.selection.get("mode") != "multiple":
+            signals += T.contradiction_signals(state.text, family)
+            signals += T.unit_signals(state.text, family)
+            typical = result.get("typical_extra") or {}
+            if typical.get("ste", 0) >= 30:
+                for item in typical.get("ours", []):
+                    if item["status"] != "rare" or item.get("value") in (None, ""):
+                        continue
+                    signals.append(
+                        Signal(
+                            type=SignalType.IRRELEVANT,
+                            severity=Severity.WARNING,
+                            message=f"«{item['name']}: {item['value']}» — нетипично для "
+                            f"«{family.name}»: в {typical['ste']} реальных СТЕ этого типа "
+                            "такую характеристику почти не указывают.",
+                            suggestion="Проверьте, относится ли она к этому товару; "
+                            "если нет — уберите.",
+                            char=item["name"],
+                            user_value=item["value"],
+                            family_id=family.id,
+                        )
+                    )
+        if not signals:
+            return []
+        from apps.ste.application.result import ResultBuilder
+
+        known = {(item.get("type"), item.get("char")) for item in result.get("signals", [])}
+        fresh = [
+            signal
+            for signal in signals
+            if (signal.type.value, signal.char) not in known
+            or signal.type != SignalType.CONTRADICTION
+        ]
+        return ResultBuilder._signals_json(fresh)
 
     def _nearest_generic(self, text: str, k: int = 5) -> list[Family]:
         """Общие позиции для LLM-1 — только ближайшие по поиску, а не все 81 (~5 тыс. токенов)."""
@@ -1001,6 +1084,7 @@ class Pipeline:
             "reranker": "реранкер Qwen3-Reranker",
             "llm": f"LLM-1 ({config.LLM_MODEL}) из топ-{config.FAMILY_TOP_K} поиска",
             "fallback": "поиск (BM25 + векторы) и правила, без LLM",
+            "multiple": "проверка текста: несколько товаров в одной позиции",
             "user": "выбрано пользователем",
             "empty": "—",
         }
@@ -1017,6 +1101,9 @@ class Pipeline:
         result["typical_extra"] = self._typical_extra_json(
             state, (result.get("family") or {}).get("id")
         )
+        text_signals = self._text_signals(state, result)
+        if text_signals:
+            result["signals"] = text_signals + list(result.get("signals") or [])
         result["timings_ms"] = {
             key: state.timings.get(key, 0)
             for key in ("typos", "preview", "rerank", "llm1", "llm2", "rules", "total")

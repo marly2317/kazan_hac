@@ -120,10 +120,17 @@ def test_parse_number_accepts(text, expected):
 
 @pytest.mark.parametrize(
     "text",
-    ["1/2", "-5", -1.0, "", "  ", None, "abc", "12 34", "1.2.3", "125мм", True, math.nan, math.inf],
+    ["1/2", "", "  ", None, "abc", "12 34", "1.2.3", "125мм", True, math.nan, math.inf],
 )
 def test_parse_number_rejects(text):
     assert parse_number(text) is None
+
+
+def test_parse_number_keeps_the_minus():
+    """«-750 мм» — не «не указано»: отрицательное число станет конфликтом с КТРУ."""
+    assert parse_number("-5") == -5.0
+    assert parse_number(-1.0) == -1.0
+    assert parse_number("−0,5") == -0.5
 
 
 @pytest.mark.parametrize(

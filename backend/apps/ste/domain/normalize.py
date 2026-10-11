@@ -60,19 +60,22 @@ _ITEM_SEPARATORS = re.compile(r"\s*[;,]\s*")
 def parse_number(text: str | float | None) -> float | None:
     """Число, как его пишут: «0,84», «1 200», «2.03000», «125».
 
-    Только неотрицательные десятичные числа целиком (в КТРУ по охвату нет отрицательных
-    значений): дроби «1/2», диапазоны и числа с хвостом дают ``None`` — угадывать здесь
-    опаснее, чем признать, что числа нет.
+    Десятичные числа целиком, в том числе отрицательные: «-750 мм» нельзя молча считать
+    «не указано» — тогда код подобрался бы без этого значения; отрицательное число не ляжет ни
+    на один неотрицательный интервал КТРУ и станет конфликтом с объяснением. Дроби «1/2»,
+    диапазоны и числа с хвостом дают ``None`` — угадывать опаснее, чем признать, что числа нет.
     """
     if text is None or isinstance(text, bool):
         return None
     if isinstance(text, int | float):
         value = float(text)
-        return value if math.isfinite(value) and value >= 0 else None
-    raw = str(text).strip()
+        return value if math.isfinite(value) else None
+    raw = str(text).strip().replace("−", "-")
+    sign = -1.0 if raw.startswith("-") else 1.0
+    raw = raw[1:].strip() if sign < 0 else raw
     if not _NUMBER.fullmatch(raw):
         return None
-    return float(re.sub(_SPACES, "", raw).replace(",", "."))
+    return sign * float(re.sub(_SPACES, "", raw).replace(",", "."))
 
 
 def split_number_unit(text: str | None) -> tuple[float | None, str | None]:
@@ -83,14 +86,16 @@ def split_number_unit(text: str | None) -> tuple[float | None, str | None]:
     """
     if not text:
         return None, None
-    raw = str(text).strip()
+    raw = str(text).strip().replace("−", "-")
+    sign = "-" if raw.startswith("-") else ""
+    raw = raw[1:].strip() if sign else raw
     match = _NUMBER.match(raw)
     if match is None:
         return None, None
     rest = raw[match.end() :].strip()
     if rest and (rest[0] in "/.,-" or rest[0].isdigit()):
         return None, None
-    return parse_number(match.group(0)), (rest or None)
+    return parse_number(sign + match.group(0)), (rest or None)
 
 
 def representative(value: AllowedValue) -> float:
@@ -439,6 +444,20 @@ def _normalize_number(spec: Spec, ev: ExtractedValue) -> tuple[NormalizedValue, 
 # --- совместимость с листом (архитектура §4.5) -------------------------------------------------
 
 
+def _allows_negative(allowed) -> bool:
+    """Есть ли у характеристики отрицательные значения (температура «от -40»)."""
+    for value in allowed:
+        if not value.is_numeric:
+            continue
+        if value.kind == "concrete" and (value.concrete or 0) < 0:
+            return True
+        if value.minimum is not None and value.minimum < 0:
+            return True
+        if value.maximum is not None and value.maximum <= 0:
+            return True
+    return False
+
+
 def compatible(spec: CharSpec | None, nv: NormalizedValue) -> bool | None:
     """Совместимо ли значение с характеристикой листа.
 
@@ -457,6 +476,9 @@ def compatible(spec: CharSpec | None, nv: NormalizedValue) -> bool | None:
         number = nv.number_in_ktru_unit if nv.number_in_ktru_unit is not None else nv.number
         unit = U.parse_unit(nv.ktru_unit) if nv.ktru_unit else None
         if any(value.is_numeric for value in spec.allowed):
+            if number is not None and number < 0 and not _allows_negative(spec.allowed):
+                # «<800 мм» формально содержит -750, но отрицательной высоты не бывает.
+                return False
             return bool(fits_number(spec.allowed, number, unit))
         # Числовое значение против текстового списка (редкость): сравниваем запись числа.
         return any(value.matches_text(format_number(number)) for value in spec.allowed)

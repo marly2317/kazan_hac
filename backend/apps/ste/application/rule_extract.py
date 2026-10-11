@@ -18,7 +18,7 @@ from apps.ste.domain.values import fold_text
 
 _WORD = re.compile(r"[0-9a-zа-яё]+", re.IGNORECASE)
 _NUMBER_UNIT = re.compile(
-    r"(?<![\w.,])(\d+(?:[.,]\d+)?)\s*("
+    r"(?<![\w.,])([-−]?\d+(?:[.,]\d+)?)\s*("
     + "|".join(re.escape(word) for word in U.known_unit_words() if word and not word.isspace())
     + r")?(?![a-zа-яё])",
     re.IGNORECASE,
@@ -63,6 +63,9 @@ def _find_text_value(text: str, char: FamilyChar) -> tuple[str, str] | None:
             best = (value, _quote_for(text, value_stems))
     if best is not None:
         return best
+    numbered = _numbered_text_value(text, char, values)
+    if numbered is not None:
+        return numbered
     candidates = []
     for value in values:
         for word in _WORD.findall(value):
@@ -74,6 +77,25 @@ def _find_text_value(text: str, char: FamilyChar) -> tuple[str, str] | None:
     if len({value for value, _ in candidates}) == 1:
         value, word = candidates[0]
         return value, _quote_for(text, [_stem(word)])
+    return None
+
+
+def _numbered_text_value(text: str, char: FamilyChar, values: list[str]) -> tuple[str, str] | None:
+    """Размер «50» записан в КТРУ текстом: берётся, только если рядом слово из названия
+    характеристики («размер 50», «50 размера», «р-р 48») — иначе любое число в тексте
+    стало бы размером."""
+    numeric_values = {
+        value.strip(): value for value in values if re.fullmatch(r"\d+", value.strip())
+    }
+    if not numeric_values:
+        return None
+    hints = [stem for stem in _stems(char.name) if len(stem) >= 4] + ["р-р"]
+    for match in re.finditer(r"(?<![\w.,-])(\d+)(?![\w.,])", text):
+        if match.group(1) not in numeric_values:
+            continue
+        around = text[max(0, match.start() - 25) : match.end() + 25].casefold()
+        if any(hint in around for hint in hints) or "р-р" in around:
+            return numeric_values[match.group(1)], match.group(0)
     return None
 
 
@@ -112,11 +134,17 @@ def extract_by_rules(text: str, family: Family) -> dict[str, ExtractedValue]:
 
     numeric = [char for char in family.chars.values() if char.is_numeric]
     taken: set[str] = set()
-    for match in _NUMBER_UNIT.finditer(text):
-        number = float(match.group(1).replace(",", "."))
+    matches = list(_NUMBER_UNIT.finditer(text))
+    for index, match in enumerate(matches):
+        # «-750 мм» остаётся отрицательным: молча отбросить минус значит подобрать код для 750.
+        number = float(match.group(1).replace(",", ".").replace("−", "-"))
         unit_text = match.group(2)
         unit = U.parse_unit(unit_text) if unit_text else None
-        target = _attribute(text, match.start(), unit, numeric, taken)
+        left_from = matches[index - 1].end() if index else 0
+        right_to = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        target = _attribute(
+            text[left_from : match.start()], text[match.end() : right_to], unit, numeric, taken
+        )
         if target is None:
             continue
         taken.add(target.key)
@@ -139,27 +167,47 @@ HINT_SYNONYMS = {"ширин": "длин"}
 
 
 def _attribute(
-    text: str, position: int, unit: U.Unit | None, numeric: list[FamilyChar], taken: set[str]
+    left: str, right: str, unit: U.Unit | None, numeric: list[FamilyChar], taken: set[str]
 ) -> FamilyChar | None:
-    """К какой характеристике относится число: ближайшее слово-подсказка слева, иначе — размерность.
+    """К какой характеристике относится число — по словам рядом с ним.
 
-    Только ближайшее слово: в «высота 215 см ширина 130 см» подсказка к 130 — «ширина», а не
-    «высота», стоящая раньше. Из подходящих — характеристика самого изделия («Длина шкафа»),
-    а не его части («Длина выдвижного ящика»): часть пользователь назвал бы.
+    ``left`` — текст от предыдущего числа до этого, ``right`` — от этого до следующего: так
+    в «высота 215 см ширина 130 см» к 130 относится только «ширина». Слева берутся до трёх
+    слов: «высота до столешницы 750» — это «Высота до столешницы», а не «Длина столешницы»
+    (побеждает характеристика, у которой совпало больше слов; при равенстве — ближнее слово).
+    Справа — для «50 размера», «3 посадочных места», «2 ящика». Из подходящих — характеристика
+    самого изделия («Длина шкафа»), а не его части: часть пользователь назвал бы.
     """
-    words = [w for w in _WORD.findall(text[max(0, position - 40) : position]) if len(w) >= 4]
-    hint = _stem(words[-1]) if words else ""
-    hint = HINT_SYNONYMS.get(hint[:5], hint)
     candidates = [char for char in numeric if char.key not in taken]
     if unit is not None:
         candidates = [c for c in candidates if c.unit is None or c.unit.dimension == unit.dimension]
-    named = [c for c in candidates if hint and any(st.startswith(hint) for st in _stems(c.name))]
-    if named:
-        return min(named, key=lambda c: len(c.name.split()))
+    left_words = [_hint(w) for w in _WORD.findall(left[-60:]) if len(w) >= 4][-3:]
+    right_words = [_hint(w) for w in _WORD.findall(right[:40]) if len(w) >= 4][:2]
+    for words in (left_words, right_words):
+        if not words:
+            continue
+        best: tuple[tuple, FamilyChar] | None = None
+        for char in candidates:
+            names = _stems(char.name)
+            hits = [i for i, word in enumerate(words) if any(st.startswith(word) for st in names)]
+            if not hits:
+                continue
+            # больше совпавших слов → ближе к числу → короче название (изделие, а не часть)
+            near = max(hits) if words is left_words else -min(hits)
+            score = (len(hits), near, -len(char.name.split()))
+            if best is None or score > best[0]:
+                best = (score, char)
+        if best is not None:
+            return best[1]
     if unit is None:
         return None
     same = [c for c in candidates if c.unit is not None]
     return same[0] if len(same) == 1 else None
+
+
+def _hint(word: str) -> str:
+    stem = _stem(word)
+    return HINT_SYNONYMS.get(stem[:5], stem)
 
 
 def _fold(text: str) -> str:
