@@ -86,7 +86,16 @@ export type Result = {
   timings_ms: Record<string, number>;
   typical_extra?: {
     ste: number;
-    chars: { name: string; share: number; values: string[] }[];
+    typical: {
+      name: string;
+      share: number;
+      values: string[];
+      status: 'filled' | 'suggested' | 'ktru';
+      value: string | null;
+      ktru_name: string | null;
+    }[];
+    ours: { name: string; value: string; status: 'typical' | 'rare'; share: number | null }[];
+    summary: { filled: number; suggested: number; rare: number };
   } | null;
   trace?: {
     family_by: string;

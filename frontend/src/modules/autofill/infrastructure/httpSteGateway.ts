@@ -39,4 +39,8 @@ export class HttpSteGateway implements SteGateway {
   edit(sessionId: string, charKey: string, value: string): Promise<Result> {
     return post('edit', { session_id: sessionId, char_key: charKey, value });
   }
+
+  setExtra(sessionId: string, name: string, value: string): Promise<Result> {
+    return post('extra', { session_id: sessionId, name, value });
+  }
 }

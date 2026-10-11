@@ -212,3 +212,15 @@ def test_answer_text_unknown_is_skip(kb, fake_llm, monkeypatch):
         for signal in second["signals"]
     )
     assert Source.ANSWER.value == "answer"
+
+
+def test_user_sets_and_removes_extra_characteristic(kb):
+    pipeline = _pipeline(kb, strong=True)
+    first = pipeline.analyze("матрац длина 190 см")
+    session = first["session_id"]
+    result = pipeline.set_extra(session, "Напряжение аккумулятора", "18 В")
+    extra = result["card"]["extra"] if result.get("card") else []
+    assert any(item["name"] == "Напряжение аккумулятора" for item in extra)
+    result = pipeline.set_extra(session, "напряжение аккумулятора", "")
+    extra = result["card"]["extra"] if result.get("card") else []
+    assert not any(item["name"] == "Напряжение аккумулятора" for item in extra)

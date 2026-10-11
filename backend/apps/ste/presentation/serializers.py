@@ -22,6 +22,12 @@ class AnswerRequestSerializer(serializers.Serializer):
     value = serializers.CharField(max_length=500)
 
 
+class ExtraRequestSerializer(serializers.Serializer):
+    session_id = serializers.CharField()
+    name = serializers.CharField(max_length=300)
+    value = serializers.CharField(max_length=500, allow_blank=True)
+
+
 class AnswerTextRequestSerializer(serializers.Serializer):
     session_id = serializers.CharField()
     char_key = serializers.CharField(max_length=300)

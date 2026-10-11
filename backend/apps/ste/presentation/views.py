@@ -143,6 +143,25 @@ class ChooseLeafView(_SteView):
             return _error(error)
 
 
+class ExtraView(_SteView):
+    request_serializer = s.ExtraRequestSerializer
+
+    @extend_schema(
+        tags=["ste"],
+        summary="Задать дополнительную характеристику (пустое значение — удалить)",
+        request=s.ExtraRequestSerializer,
+        responses={200: _RESULT, **error_responses(400, 403)},
+    )
+    def post(self, request: Request) -> Response:
+        data = self._payload(request)
+        try:
+            return Response(
+                container.ste_pipeline().set_extra(data["session_id"], data["name"], data["value"])
+            )
+        except PipelineError as error:
+            return _error(error)
+
+
 class EditView(_SteView):
     request_serializer = s.AnswerRequestSerializer
 

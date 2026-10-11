@@ -31,6 +31,7 @@ from apps.ste.domain.model import (
     TypoFix,
 )
 from apps.ste.domain.normalize import normalize_value, option_value, split_number_unit
+from apps.ste.domain.values import format_number
 
 logger = logging.getLogger(__name__)
 
@@ -318,6 +319,38 @@ class Pipeline:
             state.skipped.remove(char_key)
         return self._finish(state, session_id, total)
 
+    def set_extra(self, session_id: str, name: str, value: str) -> dict:
+        """Дополнительная характеристика от пользователя — например, из подсказки «часто
+        указывают в СТЕ этого типа». Пустое значение удаляет характеристику."""
+        from apps.ste.domain.extra_filter import same_name
+
+        total = time.perf_counter()
+        state = self._load(session_id)
+        state.llm_note = None
+        family = self._focus_family(state)
+        name = name.strip()
+        if family is None or not name:
+            raise PipelineError("Сначала определите тип товара.")
+        items = [
+            item
+            for item in state.extra.get(family.id, [])
+            if not same_name(str(item.get("name") or ""), name)
+        ]
+        value = value.strip()
+        if value:
+            number, unit = split_number_unit(value)
+            items.append(
+                {
+                    "name": name[:1].upper() + name[1:],
+                    "value": format_number(number) if number is not None and unit else value,
+                    "unit": unit if number is not None else None,
+                    "quote": None,
+                    "source": "user",
+                }
+            )
+        state.extra[family.id] = items
+        return self._finish(state, session_id, total)
+
     def choose_family(self, session_id: str, family_id: str) -> dict:
         total = time.perf_counter()
         state = self._load(session_id)
@@ -602,19 +635,19 @@ class Pipeline:
             return []
 
     def _typical_extra_json(self, state: State, family_id: str | None) -> dict | None:
-        """Блок карточки: «в СТЕ этого типа обычно указывают» — без того, что уже заполнено."""
-        from apps.ste.domain.extra_filter import same_name
+        """Сравнение с практикой портала: КТРУ ↔ извлечённое ↔ что указывают в реальных СТЕ."""
+        from apps.ste.domain.ste_compare import compare_with_ste
         from apps.ste.runtime import ste_extra_stats
 
-        if not family_id:
+        family = self.kb.families.get(family_id or "")
+        if family is None:
             return None
-        typical = self._typical_extra(family_id)
-        if not typical:
-            return None
-        have = [item.get("name", "") for item in state.extra.get(family_id, [])]
-        items = [item for item in typical if not any(same_name(item["name"], n) for n in have)]
-        total = (ste_extra_stats().get(family_id) or {}).get("ste", 0)
-        return {"ste": total, "chars": items} if items else None
+        return compare_with_ste(
+            self._typical_extra(family.id),
+            (ste_extra_stats().get(family.id) or {}).get("ste", 0),
+            {key: char.name for key, char in family.chars.items()},
+            state.extra.get(family.id, []),
+        )
 
     def _llm1_enabled(self, state: State) -> bool:
         if self.deps.llm is None:

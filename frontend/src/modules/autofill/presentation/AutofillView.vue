@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { LoaderCircle } from '@lucide/vue';
-import { computed, ref } from 'vue';
+import { computed, reactive, ref } from 'vue';
 
 import { useAutofillStore } from '../application/autofillStore';
 import type { CardCharacteristic, Question } from '../domain/result';
@@ -11,6 +11,12 @@ import { sourceLabel, stageLabel } from '../domain/result';
  * Сверху вниз ровно путь, который требует задача.
  */
 const store = useAutofillStore();
+const extraInput = reactive<Record<string, string>>({});
+function saveExtra(name: string): void {
+  const value = (extraInput[name] ?? '').trim();
+  if (value) void store.setExtra(name, value);
+  extraInput[name] = '';
+}
 const result = computed(() => store.result);
 const freeText = ref('');
 const editing = ref<string | null>(null);
@@ -228,15 +234,46 @@ function copy(code: string): void {
             <span v-if="item.matched_from" class="muted">(было: {{ item.matched_from }})</span>
           </p>
         </div>
-        <div v-if="result.typical_extra?.chars.length" class="ste-extra">
-          <h4>Часто указывают в СТЕ этого типа</h4>
+        <div v-if="result.typical_extra" class="ste-extra">
+          <h4>Сравнение с реальными СТЕ этого типа</h4>
           <p class="muted">
-            По {{ result.typical_extra.ste }} реальным СТЕ портала; в тексте этого не было —
-            заполните, если относится к товару.
+            По {{ result.typical_extra.ste }} карточкам портала: заполнено
+            {{ result.typical_extra.summary.filled }}, стоит указать
+            {{ result.typical_extra.summary.suggested }}, нетипичных у нас
+            {{ result.typical_extra.summary.rare }}.
           </p>
-          <p v-for="item in result.typical_extra.chars" :key="item.name">
-            {{ item.name }} <span class="muted">({{ Math.round(item.share * 100) }}% СТЕ)</span>
-            <span v-if="item.values.length" class="muted">: например, {{ item.values.join(', ') }}</span>
+          <table class="ste-steps">
+            <thead>
+              <tr><th>Характеристика</th><th>В СТЕ</th><th>У нас</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in result.typical_extra.typical" :key="row.name">
+                <td>{{ row.name }}</td>
+                <td>{{ Math.round(row.share * 100) }}%</td>
+                <td v-if="row.status === 'filled'">✓ {{ row.value }}</td>
+                <td v-else-if="row.status === 'ktru'" class="muted">в КТРУ: «{{ row.ktru_name }}»</td>
+                <td v-else>
+                  <button
+                    v-for="value in row.values"
+                    :key="value"
+                    class="chip"
+                    type="button"
+                    :disabled="store.loading"
+                    @click="store.setExtra(row.name, value)"
+                  >{{ value }}</button>
+                  <input
+                    v-model="extraInput[row.name]"
+                    class="ste-extra-input"
+                    placeholder="своё значение"
+                    @keyup.enter="saveExtra(row.name)"
+                  />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <p v-for="item in result.typical_extra.ours.filter((o) => o.status === 'rare')" :key="item.name" class="muted">
+            «{{ item.name }}: {{ item.value }}» — в СТЕ этого типа почти не указывают, проверьте, нужна ли.
+            <button class="chip" type="button" @click="store.setExtra(item.name, '')">убрать</button>
           </p>
         </div>
         <p v-if="result.card.brand || result.card.model" class="muted">

@@ -86,6 +86,8 @@ export const useAutofillStore = defineStore('autofill', () => {
   const chooseLeaf = (code: string) => run(() => gateway.chooseLeaf(sessionId(), code));
   const edit = (charKey: string, value: string) =>
     run(() => gateway.edit(sessionId(), charKey, value));
+  const setExtra = (name: string, value: string) =>
+    run(() => gateway.setExtra(sessionId(), name, value));
 
   function reset(): void {
     clearTimeout(previewTimer);
@@ -112,6 +114,7 @@ export const useAutofillStore = defineStore('autofill', () => {
     chooseFamily,
     chooseLeaf,
     edit,
+    setExtra,
     reset,
   };
 });

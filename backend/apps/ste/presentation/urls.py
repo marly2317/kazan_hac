@@ -12,4 +12,5 @@ urlpatterns = [
     path("choose-family/", views.ChooseFamilyView.as_view(), name="choose-family"),
     path("choose-leaf/", views.ChooseLeafView.as_view(), name="choose-leaf"),
     path("edit/", views.EditView.as_view(), name="edit"),
+    path("extra/", views.ExtraView.as_view(), name="extra"),
 ]

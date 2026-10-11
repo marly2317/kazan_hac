@@ -9,4 +9,5 @@ export interface SteGateway {
   chooseFamily(sessionId: string, familyId: string): Promise<Result>;
   chooseLeaf(sessionId: string, code: string): Promise<Result>;
   edit(sessionId: string, charKey: string, value: string): Promise<Result>;
+  setExtra(sessionId: string, name: string, value: string): Promise<Result>;
 }
