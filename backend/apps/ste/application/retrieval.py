@@ -493,6 +493,10 @@ class Retriever:
 
     # --- уверенность -----------------------------------------------------------------------
 
+    def _name_of(self, family_id: str) -> frozenset[str]:
+        index = self._index.get(family_id)
+        return self._name_terms[index] if index is not None else frozenset()
+
     def name_overlap(self, terms: Iterable[str], family_id: str) -> float:
         """Доля основ названия семейства, которые есть в запросе (0 — ни одной, 1 — все)."""
         index = self._index.get(family_id)
@@ -540,7 +544,22 @@ class Retriever:
         features["top1_id"] = top.family_id
         features["bm25_top1_id"] = next((h.family_id for h in hits if h.bm25_rank == 1), None)
         features["vector_top1_id"] = next((h.family_id for h in hits if h.vector_rank == 1), None)
-        others = [hit.cosine for hit in hits[1:] if hit.cosine is not None]
+        # Соперники лидера для отрыва. Не соперники: более общий тип с тем же названием
+        # («Брюки» при лидере «Брюки спортивные») — тот же товар, названный менее точно, и более
+        # узкий, чьих отличительных слов в запросе нет («… детские» при «брюки спортивные
+        # женские»): пользователь назвал бы их.
+        top_name = self._name_of(top.family_id)
+        query_terms = set(analyze(clean_query(text, self.brands), self.prefix)) if text else set()
+
+        def rival(hit: FamilyHit) -> bool:
+            name = self._name_of(hit.family_id)
+            if not top_name:
+                return True
+            if name < top_name:
+                return False
+            return not (top_name < name and not (name - top_name) & query_terms)
+
+        others = [hit.cosine for hit in hits[1:] if hit.cosine is not None and rival(hit)]
         if top.cosine is not None:
             features["top1_cosine"] = top.cosine
             features["top2_cosine"] = max(others) if others else None

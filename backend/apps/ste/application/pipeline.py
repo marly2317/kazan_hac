@@ -236,6 +236,7 @@ class Pipeline:
             return self._finish(state, session_id, total)
 
         self._select_family(state, hits)
+        self._prefer_specific(state)
 
         start = time.perf_counter()
         self._extract_all(
@@ -613,6 +614,37 @@ class Pipeline:
         query = set(analyze(text, None))
         words = set(analyze(" ".join((*family.synonyms, *family.keywords, family.name)), None))
         return bool(query & words)
+
+    def _prefer_specific(self, state: State) -> None:
+        """«брюки спортивные женские»: если точный тип назван в запросе целиком, более общий
+        («Брюки») — не альтернатива, а то же самое менее точно; вопрос «какой тип» не нужен."""
+        from apps.ste.application.text_checks import stems
+
+        if len(state.candidates) < 2:
+            return
+        query = stems(state.text)
+        names = {
+            choice["family_id"]: stems(self.kb.families[choice["family_id"]].name)
+            for choice in state.candidates
+            if choice["family_id"] in self.kb.families
+        }
+        named = [fid for fid, words in names.items() if words and words <= query]
+        if not named:
+            return
+        general = {
+            fid for fid, words in names.items() if any(words < names[best] for best in named)
+        }
+        if general:
+            kept = [choice for choice in state.candidates if choice["family_id"] not in general]
+            dropped = [self.kb.families[fid].name for fid in general]
+            state.candidates = kept
+            self._step(
+                state,
+                "Уточнение типа",
+                "правило, без нейросети",
+                0,
+                "убраны более общие типы: " + ", ".join(dropped),
+            )
 
     def _multiple_products(self, state: State, hits: list[FamilyHit]) -> bool:
         """«Стол и стул в одной позиции» → вопрос «какой товар оформляем» + ошибка."""
