@@ -777,13 +777,15 @@ def _absent_all(family: Family, source: Source = Source.TEXT) -> dict[str, Extra
     }
 
 
-def extract_values(client: JsonLlm, text: str, family: Family) -> ExtractionResult:
+def extract_values(
+    client: JsonLlm, text: str, family: Family, extra_hints: list[str] | None = None
+) -> ExtractionResult:
     """LLM-2 (§4.3): значения всех характеристик семейства, extra, бренд и модель."""
     if not text.strip() or not family.chars:
         return ExtractionResult(values=_absent_all(family), extra=[])
     ids = P.char_ids(family)
     response = client.complete_json(
-        P.extract_messages(text, family),
+        P.extract_messages(text, family, extra_hints),
         extraction_schema(list(ids)),
         "extract_values",
         max_tokens=EXTRACT_MAX_TOKENS,

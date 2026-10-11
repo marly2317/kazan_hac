@@ -181,10 +181,22 @@ def _family_header(family: Family) -> str:
     return f"Семейство: {family.name}" + (f" (ОКПД2 {okpd2})." if okpd2 else ".")
 
 
-def extract_messages(text: str, family: Family) -> Messages:
-    """LLM-2: разложить текст по характеристикам семейства (§4.3, §7.2)."""
+def extract_messages(text: str, family: Family, extra_hints: list[str] | None = None) -> Messages:
+    """LLM-2: разложить текст по характеристикам семейства (§4.3, §7.2).
+
+    ``extra_hints`` — как в реальных СТЕ этого типа называют характеристики сверх КТРУ: если
+    текст о них говорит, extra получает эти названия, а не придуманные моделью.
+    """
     ids = char_ids(family)
     lines = [char_line(cid, family.chars[key], text) for cid, key in ids.items()]
+    hints = []
+    if extra_hints:
+        hints = [
+            "",
+            "Для extra: в реальных СТЕ этого типа обычно указывают "
+            + ", ".join(f"«{name}»" for name in extra_hints)
+            + ". Если текст о них говорит — называй их так. Если не говорит — не добавляй.",
+        ]
     system = "\n".join(
         [
             "Ты заполняешь характеристики товара по справочнику КТРУ.",
@@ -192,6 +204,7 @@ def extract_messages(text: str, family: Family) -> Messages:
             "Характеристики (id — название — тип — единица — обязательность — допустимые "
             "значения):",
             *lines,
+            *hints,
             "",
             EXTRACT_RULES,
         ]

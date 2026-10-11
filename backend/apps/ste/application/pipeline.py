@@ -559,6 +559,32 @@ class Pipeline:
         ]
         return generic[:k]
 
+    @staticmethod
+    def _typical_extra(family_id: str) -> list[dict]:
+        """Что обычно указывают в реальных СТЕ семейства сверх КТРУ: [{name, share, values}]."""
+        from apps.ste.runtime import ste_extra_stats
+
+        try:
+            return list((ste_extra_stats().get(family_id) or {}).get("chars") or [])
+        except Exception as error:  # noqa: BLE001 — статистика необязательна
+            logger.warning("Статистика СТЕ недоступна: %s", error)
+            return []
+
+    def _typical_extra_json(self, state: State, family_id: str | None) -> dict | None:
+        """Блок карточки: «в СТЕ этого типа обычно указывают» — без того, что уже заполнено."""
+        from apps.ste.domain.extra_filter import same_name
+        from apps.ste.runtime import ste_extra_stats
+
+        if not family_id:
+            return None
+        typical = self._typical_extra(family_id)
+        if not typical:
+            return None
+        have = [item.get("name", "") for item in state.extra.get(family_id, [])]
+        items = [item for item in typical if not any(same_name(item["name"], n) for n in have)]
+        total = (ste_extra_stats().get(family_id) or {}).get("ste", 0)
+        return {"ste": total, "chars": items} if items else None
+
     def _llm1_enabled(self, state: State) -> bool:
         if self.deps.llm is None:
             return False
@@ -698,6 +724,9 @@ class Pipeline:
             return None
         try:
             llm = self._llm(state, f"LLM-2 · характеристики «{family.name}»")
+            hints = [item["name"] for item in self._typical_extra(family_id)]
+            if hints:
+                return extract_values(llm, state.text, family, hints)
             return extract_values(llm, state.text, family)
         except Exception as error:  # noqa: BLE001
             return error
@@ -923,6 +952,9 @@ class Pipeline:
             "llm_error": state.llm_note,
             "steps": list(state.steps),
         }
+        result["typical_extra"] = self._typical_extra_json(
+            state, (result.get("family") or {}).get("id")
+        )
         result["timings_ms"] = {
             key: state.timings.get(key, 0)
             for key in ("typos", "preview", "rerank", "llm1", "llm2", "rules", "total")

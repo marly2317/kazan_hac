@@ -84,6 +84,10 @@ export type Result = {
   to_fill_optional: FillItem[];
   signals: Signal[];
   timings_ms: Record<string, number>;
+  typical_extra?: {
+    ste: number;
+    chars: { name: string; share: number; values: string[] }[];
+  } | null;
   trace?: {
     family_by: string;
     llm1_called: boolean;

@@ -77,6 +77,15 @@ def extra_unifier():
     return ExtraUnifier(dictionary)
 
 
+@lru_cache(maxsize=1)
+def ste_extra_stats() -> dict:
+    """Что обычно указывают в реальных СТЕ семейства сверх КТРУ (``kb_build.ste_stats``)."""
+    import json
+
+    path = config.KB_DIR / "ste_extra_stats.json"
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+
+
 def reset() -> None:
     """Сбросить всё после пересборки базы знаний (новые синонимы, векторы)."""
     for factory in (knowledge_base, corrector, retriever, reranker, llm_client, extra_unifier):

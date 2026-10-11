@@ -228,6 +228,17 @@ function copy(code: string): void {
             <span v-if="item.matched_from" class="muted">(было: {{ item.matched_from }})</span>
           </p>
         </div>
+        <div v-if="result.typical_extra?.chars.length" class="ste-extra">
+          <h4>Часто указывают в СТЕ этого типа</h4>
+          <p class="muted">
+            По {{ result.typical_extra.ste }} реальным СТЕ портала; в тексте этого не было —
+            заполните, если относится к товару.
+          </p>
+          <p v-for="item in result.typical_extra.chars" :key="item.name">
+            {{ item.name }} <span class="muted">({{ Math.round(item.share * 100) }}% СТЕ)</span>
+            <span v-if="item.values.length" class="muted">: например, {{ item.values.join(', ') }}</span>
+          </p>
+        </div>
         <p v-if="result.card.brand || result.card.model" class="muted">
           Бренд: {{ result.card.brand ?? '—' }} · модель: {{ result.card.model ?? '—' }}
         </p>
